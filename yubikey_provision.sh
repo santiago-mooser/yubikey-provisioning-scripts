@@ -38,7 +38,7 @@
 ##                                                       ##
 ###########################################################
 
-VERSION="1.2.3"
+VERSION="1.2.4"
 
 # Set the right user
 if [ -z ${SUDO_USER+x} ]; then
@@ -84,13 +84,13 @@ function usage()
    cat << HEREDOC
    This script provisions a yubikey by generating a master key, 3 subkeys and moving the subkeys to the yubikey. Please read the documentation for more information.
 
-   Usage: $progname [-e|--email EMAIL_ADDRESS] [-u|--user-pin USER_PIN] [-a|--admin-pin ADMIN_PIN] [-y|--yes] [-x|--no-upgrade]
+   Usage: $progname [-e|--email EMAIL_ADDRESS] [-u|--user-pin USER_PIN] [-a|--admin-pin ADMIN_PIN] [-y|--yes]
 
    optional arguments:
      -h, --help           show this help message and exit.
-     -e, --email          provide email used for PGP key. If it is not provided, the user is promted for an email.
-     -f, --first-name     provide first name used for PGP key.
-     -l, --last-name      provide last name used for PGP key.
+     -e, --email          provide email used for PGP key. If it is not provided, the user is prompted for an email.
+     -f, --first-name     provide first name used for PGP key. Defaults to an empty string.
+     -l, --last-name      provide last name used for PGP key. Defaults to an empty string.
      -c, --comment        provide comment used for PGP key. Defaults to an empty string.
          --username       provide username used for PGP key. Defaults to an empty string.
      -p, --password       provide password used for PGP key. If it is not provided, a random one is generated.
