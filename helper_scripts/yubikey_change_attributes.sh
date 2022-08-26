@@ -206,28 +206,29 @@ done
 if [ -n "${NEW_USER_PIN+x}" ]; then
   if [ -n "${CURRENT_USER_PIN+x}" ]; then
     if expect -c "
-      set timeout 3
+      set timeout 5
+      set send_slow {10 .001}
       spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
       expect \"gpg/card>\"
-      send -- \"admin\r\"
+      send -s \"admin\r\"
       expect \"gpg/card>\"
-      send -- \"passwd\r\"
+      send -s \"passwd\r\"
       expect \"Your selection?\"
-      send -- \"1\r\"
+      send -s \"1\r\"
       expect \"Enter passphrase:\"
-      send -- \"$CURRENT_USER_PIN\r\"
+      send -s \"$CURRENT_USER_PIN\r\"
       expect \"Enter passphrase:\"
-      send -- \"$NEW_USER_PIN\r\"
+      send -s \"$NEW_USER_PIN\r\"
       expect \"Enter passphrase:\"
-      send -- \"$NEW_USER_PIN\r\"
+      send -s \"$NEW_USER_PIN\r\"
       expect {
         -re \"Bad PIN\"       { puts \"\n BAD USER PIN!\"; exit 1 }
         -re \"PIN blocked\"   { puts \"\n PIN BLOCKED!\"; exit 1 }
-        \"Your selection?\"   { send -- \"q\r\"; }
+        \"Your selection?\"   { send -s \"q\r\"; }
         timeout               { exit 1 }
       }
       expect \"gpg/card>\"
-      send -- \"q\r\"
+      send -s \"q\r\"
       expect eof
       exit 0"; then
         green "Successfully changed admin pin"
@@ -243,30 +244,33 @@ fi
 # If the admin pin variable is set, then change the admin pin
 if [ -n "${NEW_ADMIN_PIN+x}" ]; then
   if [ -n "${CURRENT_ADMIN_PIN+x}" ]; then
-    if expect -c "spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
+    if expect -c "
+      set timeout 5
+      set send_slow {10 .001}
+      spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
       expect \"gpg/card>\"
-      send -- \"admin\r\"
+      send -s \"admin\r\"
       expect \"gpg/card>\"
-      send -- \"passwd\r\"
+      send -s \"passwd\r\"
       expect \"Your selection?\"
-      send -- \"3\r\"
+      send -s \"3\r\"
       expect \"Enter passphrase:\"
-      send -- \"$CURRENT_ADMIN_PIN\r\"
+      send -s \"$CURRENT_ADMIN_PIN\r\"
       expect \"Enter passphrase:\"
-      send -- \"$NEW_ADMIN_PIN\r\"
+      send -s \"$NEW_ADMIN_PIN\r\"
       expect \"Enter passphrase:\"
-      send -- \"$NEW_ADMIN_PIN\r\"
+      send -s \"$NEW_ADMIN_PIN\r\"
       expect {
         -re \"Bad PIN\"       { puts \"\n BAD ADMIN PIN!\"; exit 1 }
         -re \"PIN blocked\"   { puts \"\n PIN BLOCKED!\"; exit 1 }
-        \"Your selection?\"   { send -- \"q\r\"; }
+        \"Your selection?\"   { send -s \"q\r\"; }
         timeout               { exit 1 }
       }
       expect \"gpg/card>\"
-      send -- \"q\r\"
+      send -s \"q\r\"
       expect eof"; then
-      green "Successfully changed user pin"
-      CURRENT_ADMIN_PIN=$NEW_ADMIN_PIN
+        green "Successfully changed user pin"
+        CURRENT_ADMIN_PIN=$NEW_ADMIN_PIN
     else
       red "Failed to change Admin pin!";
     fi
@@ -281,28 +285,31 @@ if [ -n "$FIRST_NAME" ] || [ -n "$LAST_NAME" ]; then
 
   # Check that the current admin pin is provided
   if [ -n "${CURRENT_ADMIN_PIN}" ]; then
-    if expect -c "spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
-    expect \"gpg/card>\"
-    send -- \"admin\r\"
-    expect \"gpg/card>\"
-    send -- \"name\r\"
-    expect \"Cardholder's surname:\"
-    send -- \"$LAST_NAME\r\"
-    expect \"Cardholder's given name:\"
-    send -- \"$FIRST_NAME\r\"
-    expect {
-        \"gpg/card>\"           { send -- \"q\r\" }
-        \"Enter passphrase:\"   {
-            send -- \"$CURRENT_ADMIN_PIN\r\"; expect {
-              -re \"Bad PIN\"       { puts \"\n BAD ADMIN PIN!\"; exit 1 }
-              -re \"PIN blocked\"   { puts \"\n PIN BLOCKED!\"; exit 1 }
-              \"gpg/card>\"         { send -- \"q\r\"; }
-              timeout               { exit 1 }
-            }
+    if expect -c "
+      set timeout 5
+      set send_slow {10 .001}
+      spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
+      expect \"gpg/card>\"
+      send -s \"admin\r\"
+      expect \"gpg/card>\"
+      send -s \"name\r\"
+      expect \"Cardholder's surname:\"
+      send -s \"$LAST_NAME\r\"
+      expect \"Cardholder's given name:\"
+      send -s \"$FIRST_NAME\r\"
+      expect {
+          \"gpg/card>\"           { send -s \"q\r\" }
+          \"Enter passphrase:\"   {
+              send -s \"$CURRENT_ADMIN_PIN\r\"; expect {
+                -re \"Bad PIN\"       { puts \"\n BAD ADMIN PIN!\"; exit 1 }
+                -re \"PIN blocked\"   { puts \"\n PIN BLOCKED!\"; exit 1 }
+                \"gpg/card>\"         { send -s \"q\r\"; }
+                timeout               { exit 1 }
+              }
+          }
         }
-      }
-    expect eof"; then
-      green "Successfully changed name"
+      expect eof"; then
+        green "Successfully changed name" 
     else
       red "Failed to change key name!"
     fi
@@ -318,20 +325,23 @@ if [ -n "${PUK_URL+x}" ]; then
   if [ -n "${CURRENT_ADMIN_PIN}" ]; then
 
     # Once the required information is found to exist, we can use expect to change the URL
-    if expect -c "spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
+    if expect -c "
+      set timeout 5
+      set send_slow {10 .001}
+      spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
       expect \"gpg/card>\"
-      send -- \"admin\r\"
+      send -s \"admin\r\"
       expect \"gpg/card>\"
-      send -- \"url\r\"
+      send -s \"url\r\"
       expect \"URL to retrieve public key:\"
-      send -- \"$PUK_URL\r\"
+      send -s \"$PUK_URL\r\"
       expect {
-        \"gpg/card>\"           { send -- \"q\r\" }
+        \"gpg/card>\"           { send -s \"q\r\" }
         \"Enter passphrase:\"   {
-            send -- \"$CURRENT_ADMIN_PIN\r\"; expect {
+            send -s \"$CURRENT_ADMIN_PIN\r\"; expect {
               -re \"Bad PIN\"       { puts \"\n BAD ADMIN PIN!\"; exit 1 }
               -re \"PIN blocked\"   { puts \"\n PIN BLOCKED!\"; exit 1 }
-              \"gpg/card>\"         { send -- \"q\r\"; }
+              \"gpg/card>\"         { send -s \"q\r\"; }
               timeout               { exit 1 }
             }
         }
@@ -349,15 +359,18 @@ fi
 # If the username is declared, change it on the yubikey
 if [ -n "${KEY_USERNAME+x}" ]; then
 
-  if expect -c "spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
+  if expect -c "
+    set timeout 5
+    set send_slow {10 .001}
+    spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
     expect \"gpg/card>\"
-    send -- \"admin\r\"
+    send -s \"admin\r\"
     expect \"gpg/card>\"
-    send -- \"login\r\"
+    send -s \"login\r\"
     expect \"Login data (account name):\"
-    send -- \"$KEY_USERNAME\r\"
+    send -s \"$KEY_USERNAME\r\"
     expect \"gpg/card>\"
-    send -- \"q\r\"
+    send -s \"q\r\"
     expect eof"; then
     green "Successfully changed username"
   else
@@ -370,16 +383,19 @@ if [ -n "${SALUTATION+x}" ]; then
   if [ ! "$SALUTATION" == "M" ] && [ ! "$SALUTATION" == "F" ]; then
     red "Salutation must be one of the following values: [M, F]"
   else
-    expect -c "spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
-    expect \"gpg/card>\"
-    send -- \"admin\r\"
-    expect \"gpg/card>\"
-    send -- \"salutation\r\"
-    expect \"Salutation (M = Mr., F = Ms., or space):\"
-    send -- \"$SALUTATION\r\"
-    expect \"gpg/card>\"
-    send -- \"q\r\"
-    expect eof"
+    expect -c "
+      set timeout 5
+      set send_slow {10 .001}
+      spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-card
+      expect \"gpg/card>\"
+      send -s \"admin\r\"
+      expect \"gpg/card>\"
+      send -s \"salutation\r\"
+      expect \"Salutation (M = Mr., F = Ms., or space):\"
+      send -s \"$SALUTATION\r\"
+      expect \"gpg/card>\"
+      send -s \"q\r\"
+      expect eof"
     green "Successfully changed salutation"
   fi
 fi

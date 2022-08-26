@@ -18,7 +18,7 @@
 ##
 ##############################################################
 
-VERSION="2.0.1"
+VERSION="2.1.0"
 
 # Set the right user
 if [ -z ${SUDO_USER+x} ]; then
@@ -178,61 +178,64 @@ if [ "$machine" = "Linux" ]; then
 fi
 
 #Create subkeys
-expect -h -c "spawn gpg --homedir $GNUPGHOME --pinentry-mode loopback --passphrase \"$KEY_PASS\" --expert --edit-key $KEY_ID
+expect -c "
+  set timeout 5
+  set send_slow {10 .001}
+  spawn gpg --homedir $GNUPGHOME --pinentry-mode loopback --passphrase \"$KEY_PASS\" --expert --edit-key $KEY_ID
 
-# Create Sign Subkey
-expect \"gpg>\"
-send -- \"addkey\r\"
-expect \"Your selection? \"
-send -- \"4\r\"
-expect \"What keysize do you want? (3072) \"
-send -- \"4096\r\"
-expect \"Key is valid for? (0) \"
-send -- \"1y\r\"
-expect \"Is this correct? (y/N) \"
-send -- \"y\r\"
-expect \"Really create? (y/N) \"
-send -- \"y\r\"
+  # Create Sign Subkey
+  expect \"gpg>\"
+  send -s \"addkey\r\"
+  expect \"Your selection? \"
+  send -s \"4\r\"
+  expect \"What keysize do you want? (3072) \"
+  send -s \"4096\r\"
+  expect \"Key is valid for? (0) \"
+  send -s \"1y\r\"
+  expect \"Is this correct? (y/N) \"
+  send -s \"y\r\"
+  expect \"Really create? (y/N) \"
+  send -s \"y\r\"
 
-# Create Encryption Subkey
-expect \"gpg>\"
-send -- \"addkey\r\"
-expect \"Your selection? \"
-send -- \"6\r\"
-expect \"What keysize do you want? (3072) \"
-send -- \"4096\r\"
-expect \"Key is valid for? (0) \"
-send -- \"1y\r\"
-expect \"Is this correct? (y/N) \"
-send -- \"y\n\"
-expect \"Really create? (y/N) \"
-send -- \"y\n\"
+  # Create Encryption Subkey
+  expect \"gpg>\"
+  send -s \"addkey\r\"
+  expect \"Your selection? \"
+  send -s \"6\r\"
+  expect \"What keysize do you want? (3072) \"
+  send -s \"4096\r\"
+  expect \"Key is valid for? (0) \"
+  send -s \"1y\r\"
+  expect \"Is this correct? (y/N) \"
+  send -s \"y\n\"
+  expect \"Really create? (y/N) \"
+  send -s \"y\n\"
 
-# Create Authentication Subkey
-expect \"gpg>\"
-send -- \"addkey\r\"
-expect \"Your selection? \"
-send -- \"8\r\"
-# Take away Encrypt & Sign capabilities and add Authentication capabilities
-expect \"Your selection? \"
-send -- \"S\r\"
-expect \"Your selection? \"
-send -- \"E\r\"
-expect \"Your selection? \"
-send -- \"A\r\"
-expect \"Your selection? \"
-send -- \"Q\r\"
-# Finalize key creation
-expect \"What keysize do you want? (3072)\"
-send -- \"4096\r\"
-expect \"Key is valid for? (0) \"
-send -- \"1y\r\"
-expect \"Is this correct? (y/N) \"
-send -- \"y\r\"
-expect \"Really create? (y/N) \"
-send -- \"y\r\"
+  # Create Authentication Subkey
+  expect \"gpg>\"
+  send -s \"addkey\r\"
+  expect \"Your selection? \"
+  send -s \"8\r\"
+  # Take away Encrypt & Sign capabilities and add Authentication capabilities
+  expect \"Your selection? \"
+  send -s \"S\r\"
+  expect \"Your selection? \"
+  send -s \"E\r\"
+  expect \"Your selection? \"
+  send -s \"A\r\"
+  expect \"Your selection? \"
+  send -s \"Q\r\"
+  # Finalize key creation
+  expect \"What keysize do you want? (3072)\"
+  send -s \"4096\r\"
+  expect \"Key is valid for? (0) \"
+  send -s \"1y\r\"
+  expect \"Is this correct? (y/N) \"
+  send -s \"y\r\"
+  expect \"Really create? (y/N) \"
+  send -s \"y\r\"
 
-expect \"gpg>\"
-send -- \"save\r\"
+  expect \"gpg>\"
+  send -s \"save\r\"
 
-expect eof"
+  expect eof"

@@ -20,7 +20,7 @@
 ##                                                                  ##
 ######################################################################
 
-VERSION="2.2.1-alpha"
+VERSION="2.2.2"
 
 # Functions to print in ❀pretty colors❀
 function red(){
@@ -202,34 +202,36 @@ if [ "$machine" = "Linux" ]; then
 fi
 
 # Once everything is set, we can generate the key
-expect -c "set timeout 5
-spawn gpg --homedir $GNUPGHOME --pinentry-mode loopback --passphrase \"$KEY_PASS\" --expert --full-generate-key
+  expect -c "
+  set send_slow {10 .001}
+  set timeout 5
+  spawn gpg --homedir $GNUPGHOME --pinentry-mode loopback --passphrase \"$KEY_PASS\" --expert --full-generate-key
 
-# Generate master key
-expect \"Your selection?\"
-send -- \"8\r\"
-expect \"Your selection?\"
-send -- \"E\r\"
-expect \"Your selection?\"
-send -- \"S\r\"
-expect \"Your selection?\"
-send -- \"Q\r\"
-expect \"What keysize do you want? (3072)\"
-send -- \"4096\r\"
-expect \"Key is valid for? (0)\"
-send -- \"0\r\"
-expect \"Is this correct? (y/N)\"
-send -- \"y\r\"
-# Add user details
-expect \"Real name: \"
-send -- \"$KEY_NAME\r\"
-expect \"Email address: \"
-send -- \"$KEY_EMAIL\r\"
-expect \"Comment: \"
-send -- \"$KEY_COMMENT\r\"
+  # Generate master key
+  expect \"Your selection?\"
+  send -s \"8\r\"
+  expect \"Your selection?\"
+  send -s \"E\r\"
+  expect \"Your selection?\"
+  send -s \"S\r\"
+  expect \"Your selection?\"
+  send -s \"Q\r\"
+  expect \"What keysize do you want? (3072)\"
+  send -s \"4096\r\"
+  expect \"Key is valid for? (0)\"
+  send -s \"0\r\"
+  expect \"Is this correct? (y/N)\"
+  send -s \"y\r\"
+  # Add user details
+  expect \"Real name: \"
+  send -s \"$KEY_NAME\r\"
+  expect \"Email address: \"
+  send -s \"$KEY_EMAIL\r\"
+  expect \"Comment: \"
+  send -s \"$KEY_COMMENT\r\"
 
-expect \"Change (N)ame, (C)omment, (E)mail or (O)kay/(Q)uit? \"
-send -- \"o\r\"
-send -- \"\r\"
-send -- \"\r\"
-expect eof"
+  expect \"Change (N)ame, (C)omment, (E)mail or (O)kay/(Q)uit? \"
+  send -s \"o\r\"
+  send -s \"\r\"
+  send -s \"\r\"
+  expect eof"

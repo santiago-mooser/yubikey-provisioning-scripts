@@ -20,7 +20,7 @@
 ##                                                             ##
 #################################################################
 
-VERSION="2.0.1"
+VERSION="2.0.2"
 
 # Functions to print in ❀pretty colors❀
 function red(){
@@ -176,102 +176,105 @@ done
 # If no passphrase is passed, we can assume the key has no password and
 # we won't get prompted for the key's password when transfering the key to the card.
 if [ "$KEY_PASS" == "" ]; then
-  expect -h -c "set timeout 5
+  expect -c "
+  set timeout 5
+  set send_slow {10 .001}
   set ret 1
   spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-key \"$KEY_ID\"
 
   # Move Signature subkey
   expect \"gpg>\"
-  send -- \"key 1\r\"
+  send -s \"key 1\r\"
   expect \"gpg>\"
-  send -- \"keytocard\r\"
+  send -s \"keytocard\r\"
   expect -- \"Your selection? \"
-  send -- \"1\r\"
+  send -s \"1\r\"
   expect \"Enter passphrase: \"
-  send -- \"$ADMIN_PIN\r\"
+  send -s \"$ADMIN_PIN\r\"
   expect \"Enter passphrase: \"
-  send -- \"$ADMIN_PIN\r\"
+  send -s \"$ADMIN_PIN\r\"
 
   # Move encryption subkey
   expect \"gpg>\"
-  send -- \"key 1\r\"
+  send -s \"key 1\r\"
   expect \"gpg>\"
-  send -- \"key 2\r\"
+  send -s \"key 2\r\"
   expect \"gpg>\"
-  send -- \"keytocard\r\"
+  send -s \"keytocard\r\"
   expect -- \"Your selection? \"
-  send -- \"2\r\"
+  send -s \"2\r\"
   expect \"Enter passphrase: \"
-  send -- \"$ADMIN_PIN\r\"
+  send -s \"$ADMIN_PIN\r\"
 
   # Move authentication subkey
   expect \"gpg>\"
-  send -- \"key 2\r\"
+  send -s \"key 2\r\"
   expect \"gpg>\"
-  send -- \"key 3\r\"
+  send -s \"key 3\r\"
   expect \"gpg>\"
-  send -- \"keytocard\r\"
+  send -s \"keytocard\r\"
   expect -- \"Your selection? \"
-  send -- \"3\r\"
+  send -s \"3\r\"
   expect \"Enter passphrase: \"
-  send -- \"$ADMIN_PIN\r\"
+  send -s \"$ADMIN_PIN\r\"
 
   expect \"gpg>\"
-  send -- \"save\r\"
+  send -s \"save\r\"
 
   expect eof
   set ret 0
   exit $ret" || exit 1
 
 else
-  expect -h -c "set timeout 5
+  expect -c "
+  set timeout 5
   set ret 1
   spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-key \"$KEY_ID\"
 
   # Move Signature subkey
   expect \"gpg>\"
-  send -- \"key 1\r\"
+  send -s \"key 1\r\"
   expect \"gpg>\"
-  send -- \"keytocard\r\"
+  send -s \"keytocard\r\"
   expect -- \"Your selection? \"
-  send -- \"1\r\"
+  send -s \"1\r\"
   expect \"Enter passphrase: \"
-  send -- \"$KEY_PASS\r\"
+  send -s \"$KEY_PASS\r\"
   expect \"Enter passphrase: \"
-  send -- \"$ADMIN_PIN\r\"
+  send -s \"$ADMIN_PIN\r\"
   expect \"Enter passphrase: \"
-  send -- \"$ADMIN_PIN\r\"
+  send -s \"$ADMIN_PIN\r\"
 
   # Move encryption subkey
   expect \"gpg>\"
-  send -- \"key 1\r\"
+  send -s \"key 1\r\"
   expect \"gpg>\"
-  send -- \"key 2\r\"
+  send -s \"key 2\r\"
   expect \"gpg>\"
-  send -- \"keytocard\r\"
+  send -s \"keytocard\r\"
   expect -- \"Your selection? \"
-  send -- \"2\r\"
+  send -s \"2\r\"
   expect \"Enter passphrase: \"
-  send -- \"$KEY_PASS\r\"
+  send -s \"$KEY_PASS\r\"
   expect \"Enter passphrase: \"
-  send -- \"$ADMIN_PIN\r\"
+  send -s \"$ADMIN_PIN\r\"
 
   # Move authentication subkey
   expect \"gpg>\"
-  send -- \"key 2\r\"
+  send -s \"key 2\r\"
   expect \"gpg>\"
-  send -- \"key 3\r\"
+  send -s \"key 3\r\"
   expect \"gpg>\"
-  send -- \"keytocard\r\"
+  send -s \"keytocard\r\"
   expect -- \"Your selection? \"
-  send -- \"3\r\"
+  send -s \"3\r\"
   expect \"Enter passphrase: \"
-  send -- \"$KEY_PASS\r\"
+  send -s \"$KEY_PASS\r\"
   expect \"Enter passphrase: \"
-  send -- \"$ADMIN_PIN\r\"
+  send -s \"$ADMIN_PIN\r\"
 
   expect \"gpg>\"
-  send -- \"save\r\"
+  send -s \"save\r\"
 
   expect eof
   set ret 0

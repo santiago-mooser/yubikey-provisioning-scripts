@@ -12,7 +12,7 @@
 ##                                                       ##
 ###########################################################
 
-VERSION="1.1.0"
+VERSION="1.1.1"
 
 function red(){
     echo -e "\x1B[31m $1 \x1B[0m"
@@ -118,17 +118,18 @@ done
 
 
 expect -c "
-    set timeout 5
-    # Reset yubikey's OpenPGP application
-    spawn gpg --homedir \"$GNUPGHOME\" --edit-card
-    expect \"gpg/card> \"
-    send -- \"admin\r\"
-    expect \"gpg/card> \"
-    send -- \"factory-reset\r\"
-    expect \"Continue? (y/N) \"
-    send -- \"y\r\"
-    expect \"Really do a factory reset? \"
-    send -- \"yes\r\"
-    expect \"gpg/card> \"
-    send -- \"quit\r\"
-    expect eof"
+  set send_slow {10 .001}
+  set timeout 5
+  # Reset yubikey's OpenPGP application
+  spawn gpg --homedir \"$GNUPGHOME\" --edit-card
+  expect \"gpg/card> \"
+  send -s \"admin\r\"
+  expect \"gpg/card> \"
+  send -s \"factory-reset\r\"
+  expect \"Continue? (y/N) \"
+  send -s \"y\r\"
+  expect \"Really do a factory reset? \"
+  send -s \"yes\r\"
+  expect \"gpg/card> \"
+  send -s \"quit\r\"
+  expect eof"
