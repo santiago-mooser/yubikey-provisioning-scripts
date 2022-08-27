@@ -1,6 +1,19 @@
+
 # Yubikey provisioning scripts
 
 The scripts found in this repo help automate the provisioning of a yubikey's OpenPGP applet. It essentially automates the instructions found in @drduh 's repository to provision a yubikey's OpenPGP applet: https://github.com/drduh/YubiKey-Guide
+
+## Table of contents
+
+- [Yubikey provisioning scripts](#yubikey-provisioning-scripts)
+  - [Table of contents](#table-of-contents)
+  - [Usage](#usage)
+  - [Individual scripts](#individual-scripts)
+  - [Using the scripts](#using-the-scripts)
+  - [Assumptions about the scripts](#assumptions-about-the-scripts)
+  - [Compatibility](#compatibility)
+  - [Futher documentation on scripts](#futher-documentation-on-scripts)
+  - [Authors](#authors)
 
 ## Usage
 
@@ -28,11 +41,13 @@ cd yubikey-provisioning-scripts
      -v, --version        prints out the version number.
 ```
 
+This script will help you run all of the other helper scripts in the right order and with the right flags to create a new private key, subkeys, reset the openPGP applet of the connected yubikey and upload the subkeys to the yubikey.
+
 **WARNING**
-Your public key will be uploaded to openPGP's server! Please disable this if this is not what you want.
+The script will also upload your public key to openPGP's public key server! Please disable this in the script if this is not what you want.
 **WARNING**
 
-To understand how the scripts work, I recommend reading through the various scripts found in the [helper scripts folder](./helper_scripts/). All of the code is commented so if you're familiar with Shell code it shouldn't be too hard to read.
+To understand how the scripts work, I recommend reading through the various scripts found in the [helper scripts folder](./helper_scripts/). All of the code is commented so if you're familiar with Shell scripts, it shouldn't be too hard to understand what they all do.
 
 ## Individual scripts
 
@@ -40,7 +55,7 @@ The [helper scripts folder](./helper_scripts/) holds the various scripts used by
 
 1. [reset_smartcard.sh](./helper_scripts/reset_smartcard.sh): Reset the connected yubikey's OpenPGP applet.
 2. [gen_key.sh](./helper_scripts/gen_key.sh): Create a master PGP key.
-3. [subkey_gen.sh](./helper_scripts/subkey_gen.sh): Create PGP subkeys (One each for Encryption, Authentication and Signing).
+3. [subkey_gen.sh](./helper_scripts/subkey_gen.sh): Create three PGP subkeys (One each for Encryption, Authentication and Signing).
 4. [key_to_card.sh](./helper_scripts/key_to_card.sh): Move PGP subkeys to smartcard (private keys are not kept! they are *moved*).
 5. [yubikey_change_pin.sh](./helper_scripts/yubikey_change_pin.sh): Change the attributes of the connected yubikey (name, comment, url, etc...).
 
@@ -49,7 +64,7 @@ The [yubikey_provision.sh](./yubikey_provision.sh) script will fully provision a
 ## Using the scripts
 
 **WARNING**
-The private key of the yubikey is not exported. To reprovision new subkeys, please create a new as per [this official yubikey guide](https://github.com/drduh/YubiKey-Guide#sub-keys), but select option `14` and continue with the rest of the guide:
+The private key of the yubikey is not exported. To reprovision new subkeys, please create new subkeys as per [this official yubikey guide](https://github.com/drduh/YubiKey-Guide#sub-keys), but select option `14` and continue with the rest of the guide (including moving the subkeys to the yubikey):
 **WARNING**
 
 ```bash
@@ -66,13 +81,18 @@ Your selection?
 [...]
 ```
 
-### Assumptions about the scripts
+## Assumptions about the scripts
 
 1. All scripts
-   1. The `gpg` commandline utility is installed and available in PATH (for MacOS the GnuPG suite needs to be installed).
-   2. The `scdaemon` is installed (Ubuntu only) OR GnuPG suite is installed (MacOS)
+   1. The utility `expect` is installed and available in PATH.
+   2. The `gpg` commandline utility is installed and available in PATH (for MacOS the GnuPG suite needs to be installed).
+   3. The `scdaemon` utility is installed (Ubuntu only) OR GnuPG suite is installed (MacOS)
 
-### Futher documentation on scripts
+## Compatibility
+
+This script has been tested with MacOS Monetrrey and Ventura and Ubutuntu 20.04 LTS onwards. It will likely work with earlier versions, but it's not a guarantee.
+
+## Futher documentation on scripts
 
 Some extra documentation can be found in the [docs/ folder](./docs/).
 
