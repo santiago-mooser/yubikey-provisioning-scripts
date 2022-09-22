@@ -100,4 +100,4 @@ Some extra documentation can be found in the [docs/ folder](./docs/).
 
 ## Authors
 
-Santiago Espinosa Mooser - (contact@santiago-mooser.com)
+Santiago Espinosa Mooser - (yps@santiago-mooser.com)

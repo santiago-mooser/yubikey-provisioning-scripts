@@ -20,7 +20,7 @@
 ##                                                             ##
 #################################################################
 
-VERSION="2.0.2"
+VERSION="2.1.0"
 
 # Functions to print in ❀pretty colors❀
 function red(){
@@ -131,6 +131,8 @@ else
   USER_NAME=$SUDO_USER
 fi
 
+EXPECT_PARAMETERS="-c"
+
 # Set GNUPGHOME if none is provided.
 if [ -x ${GNUPGHOME+x} ]; then
 
@@ -147,10 +149,13 @@ if [ -x ${GNUPGHOME+x} ]; then
     green "Linux detected"
     GNUPGHOME="/home/$USER_NAME/.gnupg"
     yellow "GNUPGHOME set to $GNUPGHOME"
+
   elif [ "$machine" == "Mac" ]; then
     green "MacOS detected"
     GNUPGHOME="/Users/$USER_NAME/.gnupg"
     yellow "GNUPGHOME set to $GNUPGHOME"
+    yellow "Debug mode enabled for expect. This is needed because of MacOS's bad terminal design."
+    EXPECT_PARAMETERS="-d -c"
   fi
 fi
 
@@ -172,14 +177,15 @@ while true; do
 done
 
 
+
 # And finally move the cards to the key.
 # If no passphrase is passed, we can assume the key has no password and
 # we won't get prompted for the key's password when transfering the key to the card.
 if [ "$KEY_PASS" == "" ]; then
-  expect -c "
+  expect $EXPECT_PARAMETERS "
   set timeout 5
-  set send_slow {10 .001}
   set ret 1
+  set send_slow {10 .001}
   spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-key \"$KEY_ID\"
 
   # Move Signature subkey
@@ -193,10 +199,13 @@ if [ "$KEY_PASS" == "" ]; then
   send -s \"$ADMIN_PIN\r\"
   expect \"Enter passphrase: \"
   send -s \"$ADMIN_PIN\r\"
+  expect {
+    -re \"failed\"        { exit 1 }
+    -re \"gpg>\"          { send -s \"key 1\r\" }
+    timeout               { exit 1 }
+  }
 
   # Move encryption subkey
-  expect \"gpg>\"
-  send -s \"key 1\r\"
   expect \"gpg>\"
   send -s \"key 2\r\"
   expect \"gpg>\"
@@ -205,10 +214,13 @@ if [ "$KEY_PASS" == "" ]; then
   send -s \"2\r\"
   expect \"Enter passphrase: \"
   send -s \"$ADMIN_PIN\r\"
+  expect {
+    -re \"failed\"        { exit 1 }
+    -re \"gpg>\"          { send -s \"key 2\r\" }
+    timeout               { exit 1 }
+  }
 
   # Move authentication subkey
-  expect \"gpg>\"
-  send -s \"key 2\r\"
   expect \"gpg>\"
   send -s \"key 3\r\"
   expect \"gpg>\"
@@ -217,16 +229,19 @@ if [ "$KEY_PASS" == "" ]; then
   send -s \"3\r\"
   expect \"Enter passphrase: \"
   send -s \"$ADMIN_PIN\r\"
-
-  expect \"gpg>\"
-  send -s \"save\r\"
+  expect {
+    -re \"failed\"        { exit 1 }
+    -re \"gpg>\"          { send -s \"save\r\" }
+    timeout               { exit 1 }
+  }
 
   expect eof
   set ret 0
   exit $ret" || exit 1
 
 else
-  expect -c "
+  expect $EXPECT_PARAMETERS "
+  set send_slow {10 .001}
   set timeout 5
   set ret 1
   spawn gpg --homedir \"$GNUPGHOME\" --pinentry-mode loopback --edit-key \"$KEY_ID\"
@@ -244,10 +259,13 @@ else
   send -s \"$ADMIN_PIN\r\"
   expect \"Enter passphrase: \"
   send -s \"$ADMIN_PIN\r\"
+  expect {
+    -re \"failed\"        { exit 1 }
+    -re \"gpg>\"          { send -s \"key 1\r\" }
+    timeout               { exit 1 }
+  }
 
   # Move encryption subkey
-  expect \"gpg>\"
-  send -s \"key 1\r\"
   expect \"gpg>\"
   send -s \"key 2\r\"
   expect \"gpg>\"
@@ -258,10 +276,14 @@ else
   send -s \"$KEY_PASS\r\"
   expect \"Enter passphrase: \"
   send -s \"$ADMIN_PIN\r\"
+  expect {
+    -re \"failed\"        { exit 1 }
+    -re \"gpg>\"          { send -s \"key 2\r\" }
+    timeout               { exit 1 }
+  }
+
 
   # Move authentication subkey
-  expect \"gpg>\"
-  send -s \"key 2\r\"
   expect \"gpg>\"
   send -s \"key 3\r\"
   expect \"gpg>\"
@@ -272,9 +294,12 @@ else
   send -s \"$KEY_PASS\r\"
   expect \"Enter passphrase: \"
   send -s \"$ADMIN_PIN\r\"
+  expect {
+    -re \"failed\"        { exit 1 }
+    -re \"gpg>\"          { send -s \"save\r\" }
+    timeout               { exit 1 }
+  }
 
-  expect \"gpg>\"
-  send -s \"save\r\"
 
   expect eof
   set ret 0

@@ -123,6 +123,8 @@ else
   USER_NAME=$SUDO_USER
 fi
 
+EXPECT_PARAMETERS="-c"
+
 # Set GNUPGHOME if none is provided.
 if [ -x ${GNUPGHOME+x} ]; then
 
@@ -143,6 +145,8 @@ if [ -x ${GNUPGHOME+x} ]; then
     green "MacOS detected"
     GNUPGHOME="/Users/$USER_NAME/.gnupg"
     yellow "GNUPGHOME set to $GNUPGHOME"
+    yellow "Enabled debug mode for expect due to MacOS's bad terminal design"
+    EXPECT_PARAMETERS="-d -c"
   fi
 fi
 
@@ -178,7 +182,7 @@ if [ "$machine" = "Linux" ]; then
 fi
 
 #Create subkeys
-expect -c "
+expect $EXPECT_PARAMETERS "
   set timeout 5
   set send_slow {10 .001}
   spawn gpg --homedir $GNUPGHOME --pinentry-mode loopback --passphrase \"$KEY_PASS\" --expert --edit-key $KEY_ID

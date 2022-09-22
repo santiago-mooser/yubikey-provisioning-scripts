@@ -38,7 +38,7 @@
 ##                                                       ##
 ###########################################################
 
-VERSION="1.2.4"
+VERSION="1.2.5"
 
 # Set the right user
 if [ -z ${SUDO_USER+x} ]; then
@@ -53,7 +53,7 @@ trap cleanup 1 2 3 6
 function cleanup(){
   yellow "\nKeyboard interrupt detected! Exiting..."
   yellow "Cleaning up tmpdir..."
-  rm -r "$TMPDIR"
+  rm -rf "$TMPDIR"
   exit 0
 }
 
@@ -88,9 +88,9 @@ function usage()
 
    optional arguments:
      -h, --help           show this help message and exit.
-     -e, --email          provide email used for PGP key. If it is not provided, the user is prompted for an email.
-     -f, --first-name     provide first name used for PGP key. Defaults to an empty string.
-     -l, --last-name      provide last name used for PGP key. Defaults to an empty string.
+     -e, --email          provide email used for PGP key. If it is not provided, the user is promted for an email.
+     -f, --first-name     provide first name used for PGP key.
+     -l, --last-name      provide last name used for PGP key.
      -c, --comment        provide comment used for PGP key. Defaults to an empty string.
          --username       provide username used for PGP key. Defaults to an empty string.
      -p, --password       provide password used for PGP key. If it is not provided, a random one is generated.
@@ -257,9 +257,6 @@ fi
 
 # If either the user pin or admin pin variables don't exist,
 # automatically generate random pins
-if [ -z ${ADMIN_PIN+x} ]; then
-  ADMIN_PIN=("$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))")
-fi
 if [ -z ${USER_PIN+x} ]; then
   USER_PIN=("$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))")
 fi
@@ -270,6 +267,10 @@ green "Key email:\t\t\t$KEY_EMAIL"
 green "Key comment:\t\t\t$KEY_COMMENT"
 green "Key password: \t\t\t'$KEY_PASS'"
 green "New Smartcard user pin:\t$USER_PIN"
+if [ -z ${ADMIN_PIN+x} ]; then
+  ADMIN_PIN=("$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))")
+  green "New Smartcard admin pin:\t$ADMIN_PIN"
+fi
 if [ "$yesmode" == "y" ]; then
   yellow "WARNING: Prompts disabled!"
 fi
@@ -384,7 +385,7 @@ fi
 
 # Finally, change the attributes of the yubikey,
 # including the pin, name and puk url
-echo "Changing yubikey attributes"
+echo "Changing yubikey pins"
 ./helper_scripts/yubikey_change_attributes.sh --gnupg-home "$GNUPGHOME" \
                                               --current-user-pin "123456" \
                                               --current-admin-pin "12345678" \
@@ -407,4 +408,5 @@ echo "$CONFIRMATION_URL"
 
 # Remove TMPDIR
 green "Deleting TMPDIR: $TMPDIR"
-rm "$TMPDIR" -rf
+stty sane
+rm -rf "$TMPDIR"
