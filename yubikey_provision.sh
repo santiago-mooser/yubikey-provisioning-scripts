@@ -236,14 +236,14 @@ if [ -z ${KEY_EMAIL+x} ]; then
   while true; do
     read -pr "Please provide user email: " KEY_EMAIL
     # Check if it's a valid email...
-    if [[ ! "$KEY_EMAIL" =~ ^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$) ]]; then
+    if [[ ! "$KEY_EMAIL" =~ ^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$ ]]; then
       yellow "Please provide a valid email: <username>@<domain>"
       continue
     else
       break
     fi
   done
-elif [[ ! "$KEY_EMAIL" =~ ^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$) ]]; then
+elif [[ ! "$KEY_EMAIL" =~ ^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$ ]]; then
   red "Please provide a valid email: <username>@<domain>"
   exit 1
 fi
@@ -358,6 +358,12 @@ bash ./helper_scripts/subkey_gen.sh --gnupg-home "$GNUPGHOME" \
                                     --key-id "$KEY_ID" \
                                     --passphrase "$KEY_PASS" || { red "Failed to generate subkeys!"; exit 1; }
 green "Subkeys successfully generated"
+
+# Uncomment this if you would like to save the private keys!
+# gpg --homedir "$GNUPGHOME" --pinentry-mode loopback --passphrase "$KEY_PASS" --armor --export-secret-keys "$KEYID" > mastersub.key || { red "Unable to save PGP key password!"; exit 1; }
+# gpg --homedir "$GNUPGHOME" --pinentry-mode loopback --passphrase "$KEY_PASS" --armor --export-secret-subkeys "$KEYID" > sub.key || { red "Unable to save PGP key password!"; exit 1; }
+# echo "$KEY_PASS" | tee new_keypass.txt &>/dev/null || { red "Unable to save PGP key password!"; exit 1; }
+
 bash ./helper_scripts/key_to_card.sh --gnupg-home "$GNUPGHOME" \
                                      --key-id "$KEY_ID" \
                                      --passphrase "$KEY_PASS" \

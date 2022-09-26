@@ -44,7 +44,9 @@ cd yubikey-provisioning-scripts
 This script will help you run all of the other helper scripts in the right order and with the right flags to create a new private key, subkeys, reset the openPGP applet of the connected yubikey and upload the subkeys to the yubikey.
 
 **WARNING**
+
 The script will also upload your public key to openPGP's public key server! Please disable this in the script if this is not what you want.
+
 **WARNING**
 
 To understand how the scripts work, I recommend reading through the various scripts found in the [helper scripts folder](./helper_scripts/). All of the code is commented so if you're familiar with Shell scripts, it shouldn't be too hard to understand what they all do.
@@ -64,7 +66,11 @@ The [yubikey_provision.sh](./yubikey_provision.sh) script will fully provision a
 ## Using the scripts
 
 **WARNING**
-The private key of the yubikey is not exported. To reprovision new subkeys, please create new subkeys as per [this official yubikey guide](https://github.com/drduh/YubiKey-Guide#sub-keys), but select option `14` and continue with the rest of the guide (including moving the subkeys to the yubikey):
+
+The private key of the yubikey is not exported. If you would like to export your private keys, please uncomment the lines 363-365 of the [yubikey_provision.sh script](yubikey_provision.sh#L362)
+
+Alternatively, to reprovision new subkeys, please create new subkeys as per [this official yubikey guide](https://github.com/drduh/YubiKey-Guide#sub-keys), but select option `14` and continue with the rest of the guide (including moving the subkeys to the yubikey):
+
 **WARNING**
 
 ```bash
