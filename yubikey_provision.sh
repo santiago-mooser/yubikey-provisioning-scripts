@@ -234,16 +234,16 @@ fi
 if [ -z ${KEY_EMAIL+x} ]; then
   # Get email from user and verify syntax
   while true; do
-    read -pr "Please provide user email: " KEY_EMAIL
+    read -rp "Please provide user email: " KEY_EMAIL
     # Check if it's a valid email...
-    if [[ ! "$KEY_EMAIL" =~ ^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$ ]]; then
+    if [[ ! "$KEY_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$  ]]; then
       yellow "Please provide a valid email: <username>@<domain>"
       continue
     else
       break
     fi
   done
-elif [[ ! "$KEY_EMAIL" =~ ^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$ ]]; then
+elif [[ ! "$KEY_EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
   red "Please provide a valid email: <username>@<domain>"
   exit 1
 fi
@@ -271,9 +271,6 @@ if [ -z ${ADMIN_PIN+x} ]; then
   ADMIN_PIN=("$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))")
   green "New Smartcard admin pin:\t$ADMIN_PIN"
 fi
-if [ "$yesmode" == "y" ]; then
-  yellow "WARNING: Prompts disabled!"
-fi
 
 # If it's running linux, we want to check the entropy level
 # This is not needed in MacOS as they persist entropy between boots.
@@ -289,13 +286,18 @@ if [ "$machine" == "Linux" ]; then
         entropy_available=$(cat /proc/sys/kernel/random/entropy_avail)
         pool_size=$(cat /proc/sys/kernel/random/poolsize)
         entropy_percentage=$(echo "($entropy_available*100/$pool_size)"|bc)
-        echo -ne "Entropy available: $entropy_available/$pool_size\r"
+        echo -ne "Entropy available: \t$entropy_available/$pool_size\r"
     else
       break
     fi
   done
-  green "System entropy available: $entropy_available/$pool_size"
+  green "System entropy available: \t$entropy_available/$pool_size"
 fi
+
+if [ "$yesmode" == "y" ]; then
+  yellow "WARNING: Prompts disabled!"
+fi
+
 
 # Harden gpg configuration
 echo """
@@ -382,10 +384,10 @@ if [ "$yesmode" == "n" ]; then
     [nN] ) red "Please make sure to save public key as it is not possible to extract it from the yubieky later!"
     sleep 5;;
     * )
-    CONFIRMATION_URL="$(echo $PUBLIC_KEY | curl -T - https://keys.openpgp.org/ | grep http)" || { red "Unable to upload public key to server!"; exit 1; };;
+    CONFIRMATION_URL="$(echo "$PUBLIC_KEY" | curl -T - https://keys.openpgp.org/ | grep http)" || { red "Unable to upload public key to server!"; exit 1; };
   esac
 else
-  CONFIRMATION_URL="$(echo $PUBLIC_KEY | curl -T - https://keys.openpgp.org/ | grep http)" || { red "Unable to upload public key to server!"; exit 1; };;
+  CONFIRMATION_URL="$(echo "$PUBLIC_KEY" | curl -T - https://keys.openpgp.org/ | grep http)" || { red "Unable to upload public key to server!"; exit 1; };
 fi
 
 
