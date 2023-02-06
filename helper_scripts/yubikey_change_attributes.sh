@@ -168,29 +168,31 @@ fi
 
 EXPECT_PARAMETERS="-c"
 
+# Get the machine type
+unameOut="$(uname -s)"
+case "${unameOut}" in
+    Linux*)     machine=Linux; green "MacOS detected";;
+    Darwin*)    machine=Mac; green "MacOS detected";;
+    *)          machine="UNKNOWN:${unameOut}"
+esac
+
+
 # Set GNUPGHOME if none is provided.
 if [ -x ${GNUPGHOME+x} ]; then
-
-  # Get the machine type
-  unameOut="$(uname -s)"
-  case "${unameOut}" in
-      Linux*)     machine=Linux;;
-      Darwin*)    machine=Mac;;
-      *)          machine="UNKNOWN:${unameOut}"
-  esac
-
+  yellow "GNUPGHOME not set"
   # Choose the right gnupg default for the machine type
   if [ "$machine" == "Linux" ]; then
-    green "Linux detected"
     GNUPGHOME="/home/$USER_NAME/.gnupg"
     yellow "GNUPGHOME set to $GNUPGHOME"
   elif [ "$machine" == "Mac" ]; then
-    green "MacOS detected"
     GNUPGHOME="/Users/$USER_NAME/.gnupg"
     yellow "GNUPGHOME set to $GNUPGHOME"
-    yellow "Debug mode enabled for expect. This is needed because of MacOS's bad terminal design."
-    EXPECT_PARAMETERS="-d -c"
   fi
+fi
+
+if [ "$machine" == "Mac" ]; then
+  yellow "Debug mode enabled for `expect`. This is needed because of MacOS's bad terminal design."
+  EXPECT_PARAMETERS="-d -c"
 fi
 
 

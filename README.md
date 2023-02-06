@@ -59,7 +59,7 @@ The [helper scripts folder](./helper_scripts/) holds the various scripts used by
 2. [gen_key.sh](./helper_scripts/gen_key.sh): Create a master PGP key.
 3. [subkey_gen.sh](./helper_scripts/subkey_gen.sh): Create three PGP subkeys (One each for Encryption, Authentication and Signing).
 4. [key_to_card.sh](./helper_scripts/key_to_card.sh): Move PGP subkeys to smartcard (private keys are not kept! they are *moved*).
-5. [yubikey_change_pin.sh](./helper_scripts/yubikey_change_pin.sh): Change the attributes of the connected yubikey (name, comment, url, etc...).
+5. [yubikey_change_pin.sh](./helper_scripts/yubikey_change_attributes.sh): Change the attributes of the connected yubikey (name, comment, url, etc...).
 
 The [yubikey_provision.sh](./yubikey_provision.sh) script will fully provision a yubikey by running all the above scripts in the given order.
 
