@@ -20,7 +20,7 @@
 ##                                                                  ##
 ######################################################################
 
-VERSION="2.2.2"
+VERSION="2.2.3"
 
 # Functions to print in ❀pretty colors❀
 function red(){
@@ -48,7 +48,7 @@ function usage()
    cat << HEREDOC
     This script generates a new master GPG key.
 
-   Usage: $progname {-e|--email <email>} [-g|--gnupg-home <dir>] [-p|--passphrase <passphrase>] [-e|--email <email>] [-u|--username <username>]
+   Usage: ${progname} {-e|--email <email>} [-g|--gnupg-home <dir>] [-p|--passphrase <passphrase>] [-e|--email <email>] [-u|--username <username>]
 
    required arguments:
      -e, --email          provide email for OpenPGP key.
@@ -69,7 +69,7 @@ POSITIONAL_ARGS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     -v|--version)
-      echo $VERSION
+      echo ${VERSION}
       exit 0
       ;;
     -h|--help)
@@ -121,6 +121,13 @@ if [ -z ${KEY_EMAIL+x} ]; then
   exit
 fi
 
+# check that the email matches the regex
+if [[ ! ${KEY_EMAIL} =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
+  red "Invalid email address!"
+  exit 1
+fi
+
+
 # Set blank password if none is provided....
 if [ -z ${KEY_PASS+x} ]; then
     KEY_PASS=""
@@ -129,9 +136,9 @@ fi
 
 # Set the right user based on who's executing the script
 if [ -z ${SUDO_USER+x} ]; then
-  USER_NAME=$USER
+  USER_NAME=${USER}
 else
-  USER_NAME=$SUDO_USER
+  USER_NAME=${SUDO_USER}
 fi
 
 # Set GNUPGHOME if none is provided.
@@ -147,65 +154,65 @@ if [ -z ${GNUPGHOME+x} ]; then
   esac
 
   # Then based on this, we can choose the right gnupg default for the machine type
-  if [ "$machine" == "Linux" ]; then
+  if [ "${machine}" == "Linux" ]; then
     green "Linux detected"
-    GNUPGHOME="/home/$USER_NAME/.gnupg"
-    yellow "GNUPGHOME set to $GNUPGHOME"
-  elif [ "$machine" == "Mac" ]; then
+    GNUPGHOME="/home/${USER_NAME}/.gnupg"
+    yellow "GNUPGHOME set to ${GNUPGHOME}"
+  elif [ "${machine}" == "Mac" ]; then
     green "MacOS detected"
-    GNUPGHOME="/Users/$USER_NAME/.gnupg"
-    yellow "GNUPGHOME set to $GNUPGHOME"
+    GNUPGHOME="/Users/${USER_NAME}/.gnupg"
+    yellow "GNUPGHOME set to ${GNUPGHOME}"
   fi
 fi
 
 # Check that the gnupg folder actually exists
-if [ ! -d "$GNUPGHOME" ]; then
-  red "Folder '$GNUPGHOME' does not exist!"
+if [ ! -d "${GNUPGHOME}" ]; then
+  red "Folder '${GNUPGHOME}' does not exist!"
   exit 1
 fi
 
 # In case a name is not given, we can use the username of the user executing the script.
 if [ -z ${KEY_NAME+x} ]; then
-    yellow "No username provided! Defaulting to $USER_NAME"
-    KEY_NAME=$USER_NAME
+    yellow "No username provided! Defaulting to ${USER_NAME}"
+    KEY_NAME=${USER_NAME}
 fi
 
 # Similarly with the comment
 if [ -z ${KEY_COMMENT+x} ]; then
-    yellow "No comment provided! Defaulting to '$KEY_NAME's key'"
-    KEY_COMMENT="$KEY_NAME's key"
+    yellow "No comment provided! Defaulting to '${KEY_NAME}'s key'"
+    KEY_COMMENT="${KEY_NAME}'s key"
 fi
 
 # Once all the variables are set, we also need to check the level of entropy
 # in the system. MacOS does not allow checking the level of entry but it uses
 # multiple sources of entropy.
-if [ "$machine" = "Linux" ]; then
+if [ "${machine}" = "Linux" ]; then
   # Otherwise if the machine is Linux, we can check the entropy pool
   # and make sure it meets hte necessary requirements of 80% "full"
   entropy_available=$(cat /proc/sys/kernel/random/entropy_avail)
   pool_size=$(cat /proc/sys/kernel/random/poolsize)
-  entropy_percentage=$(echo "($entropy_available*100/$pool_size)"|bc)
+  entropy_percentage=$(echo "(${entropy_available}*100/${pool_size})"|bc)
   while true; do
-    if [ "$entropy_percentage" -le "80" ];
+    if [ "${entropy_percentage}" -le "80" ];
       then
         echo "Insuficient entropy available. Please move mouse and click around the terminal."
         entropy_available=$(cat /proc/sys/kernel/random/entropy_avail)
         pool_size=$(cat /proc/sys/kernel/random/poolsize)
-        entropy_percentage=$(echo "($entropy_available*100/$pool_size)"|bc)
-        echo -ne "Entropy available:\t$entropy_available/$pool_size\r"
+        entropy_percentage=$(echo "(${entropy_available}*100/${pool_size})"|bc)
+        echo -ne "Entropy available:\t${entropy_available}/${pool_size}\r"
     else
       break
     fi
   done
   green "Done"
-  green "System entropy available: $entropy_available/$pool_size"
+  green "System entropy available: ${entropy_available}/${pool_size}"
 fi
 
 # Once everything is set, we can generate the key
   expect -c "
   set send_slow {10 .001}
   set timeout 5
-  spawn gpg --homedir $GNUPGHOME --pinentry-mode loopback --passphrase \"$KEY_PASS\" --expert --full-generate-key
+  spawn gpg --homedir ${GNUPGHOME} --pinentry-mode loopback --passphrase ${KEY_PASS} --expert --full-generate-key
 
   # Generate master key
   expect \"Your selection?\"
@@ -224,11 +231,11 @@ fi
   send -s \"y\r\"
   # Add user details
   expect \"Real name: \"
-  send -s \"$KEY_NAME\r\"
+  send -s \"${KEY_NAME}\r\"
   expect \"Email address: \"
-  send -s \"$KEY_EMAIL\r\"
+  send -s \"${KEY_EMAIL}\r\"
   expect \"Comment: \"
-  send -s \"$KEY_COMMENT\r\"
+  send -s \"${KEY_COMMENT}\r\"
 
   expect \"Change (N)ame, (C)omment, (E)mail or (O)kay/(Q)uit? \"
   send -s \"o\r\"

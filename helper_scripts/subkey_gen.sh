@@ -18,13 +18,13 @@
 ##
 ##############################################################
 
-VERSION="2.1.0"
+VERSION="2.2.0"
 
 # Set the right user
 if [ -z ${SUDO_USER+x} ]; then
-  USER_NAME=$USER
+  USER_NAME=${USER}
 else
-  USER_NAME=$SUDO_USER
+  USER_NAME=${SUDO_USER}
 fi
 
 function red(){
@@ -50,18 +50,14 @@ function usage()
 {
    cat << HEREDOC
    This script generates three different subkeys for the given key: one for Encryption, one for Authentication and one for Signing.
-
-   Usage: $progname {-i|--key-id <key_id>} [-g|--gnupg-home <dir>] [-p|--passphrase <passphrase>]
-
+   Usage: ${progname} {-i|--key-id <key_id>} [-g|--gnupg-home <dir>] [-p|--passphrase <passphrase>]
    required arguments:
      -k, --key-id        ID of PGP key to be uploaded to yubikey.
-
    optional arguments:
      -h, --help           show this help message and exit.
-     -g, --gnupg-home     provide gnupg home directory. Defauts to \$SUDO_USER/.gnupg
+     -g, --gnupg-home     provide gnupg home directory. Defauts to \${SUDO_USER}/.gnupg
      -p, --passphrase     provide passphrase for key.
      -v, --version        print version number and exit.
-
 HEREDOC
 }
 progname=$(basename "$0")
@@ -72,7 +68,7 @@ POSITIONAL_ARGS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
     -v|--version)
-      echo $VERSION
+      echo ${VERSION}
       exit 0
       ;;
     -h|--help)
@@ -112,16 +108,20 @@ if [ -z ${KEY_ID+x} ]; then
   exit 1
 fi
 if [ -z ${KEY_PASS+x} ]; then
-    KEY_PASS=""
-    yellow "No password provided to script. Assuming key has no password."
+  KEY_PASS=""
+  yellow "No password provided to script. Assuming key has no password."
 fi
 
 # Set the right user
 if [ -z ${SUDO_USER+x} ]; then
-  USER_NAME=$USER
+  USER_NAME=${USER}
 else
-  USER_NAME=$SUDO_USER
+  USER_NAME=${SUDO_USER}
 fi
+
+
+# Generate random duration between 1 year and 1.5 years
+RANDOM_DURATION=$(( RANDOM % 183 + 365 ))d
 
 EXPECT_PARAMETERS="-c"
 
@@ -137,56 +137,55 @@ if [ -x ${GNUPGHOME+x} ]; then
   esac
 
   # Choose the right gnupg default for the machine type
-  if [ "$machine" == "Linux" ]; then
+  if [ "${machine}" == "Linux" ]; then
     green "Linux detected"
-    GNUPGHOME="/home/$USER_NAME/.gnupg"
-    yellow "GNUPGHOME set to $GNUPGHOME"
-  elif [ "$machine" == "Mac" ]; then
+    GNUPGHOME="/home/${USER_NAME}/.gnupg"
+    yellow "GNUPGHOME set to ${GNUPGHOME}"
+  elif [ "${machine}" == "Mac" ]; then
     green "MacOS detected"
-    GNUPGHOME="/Users/$USER_NAME/.gnupg"
-    yellow "GNUPGHOME set to $GNUPGHOME"
+    GNUPGHOME="/Users/${USER_NAME}/.gnupg"
+    yellow "GNUPGHOME set to ${GNUPGHOME}"
     yellow "Enabled debug mode for expect due to MacOS's bad terminal design"
     EXPECT_PARAMETERS="-d -c"
   fi
 fi
 
 # Check that the gnupg folder actually exists
-if [ ! -d "$GNUPGHOME" ]; then
-  red "Folder '$GNUPGHOME' does not exist!"
+if [ ! -d "${GNUPGHOME}" ]; then
+  red "Folder '${GNUPGHOME}' does not exist!"
   exit 1
 fi
 
 # Once all the variables are set, we also need to check the level of entropy
 # in the system. MacOS does not allow checking the level of entry but it uses
 # multiple sources of entropy.
-if [ "$machine" = "Linux" ]; then
+if [ "${machine}" = "Linux" ]; then
   # Otherwise if the machine is Linux, we can check the entropy pool
-  # and make sure it meets hte necessary requirements of 80% "full"
+  # and make sure it meets the necessary requirements of 80% "full"
   entropy_available=$(cat /proc/sys/kernel/random/entropy_avail)
   pool_size=$(cat /proc/sys/kernel/random/poolsize)
-  entropy_percentage=$(echo "($entropy_available*100/$pool_size)"|bc)
+  entropy_percentage=$(echo "(${entropy_available}*100/${pool_size})"|bc)
   while true; do
-    if [ "$entropy_percentage" -le "80" ];
+    if [ "${entropy_percentage}" -le "80" ];
       then
-        echo "Insuficient entropy available. Please move mouse and click around the terminal."
+        echo "Insufficient entropy available. Please move mouse and click around the terminal."
         entropy_available=$(cat /proc/sys/kernel/random/entropy_avail)
         pool_size=$(cat /proc/sys/kernel/random/poolsize)
-        entropy_percentage=$(echo "($entropy_available*100/$pool_size)"|bc)
-        echo -ne "Entropy available:\t$entropy_available/$pool_size\r"
+        entropy_percentage=$(echo "(${entropy_available}*100/${pool_size})"|bc)
+        echo -ne "Entropy available:\t${entropy_available}/${pool_size}\r"
     else
       break
     fi
   done
   green "Done"
-  green "System entropy available: $entropy_available/$pool_size"
+  green "System entropy available: ${entropy_available}/${pool_size}"
 fi
 
 #Create subkeys
-expect $EXPECT_PARAMETERS "
+expect ${EXPECT_PARAMETERS} "
   set timeout 5
   set send_slow {10 .001}
-  spawn gpg --homedir $GNUPGHOME --pinentry-mode loopback --passphrase \"$KEY_PASS\" --expert --edit-key $KEY_ID
-
+  spawn gpg --homedir ${GNUPGHOME} --pinentry-mode loopback --passphrase ${KEY_PASS} --expert --edit-key ${KEY_ID}
   # Create Sign Subkey
   expect \"gpg>\"
   send -s \"addkey\r\"
@@ -195,8 +194,8 @@ expect $EXPECT_PARAMETERS "
   expect \"What keysize do you want? (3072) \"
   send -s \"4096\r\"
   expect \"Key is valid for? (0) \"
-  send -s \"1y\r\"
-  expect \"Is this correct? (y/N) \"
+  send -s \"${RANDOM_DURATION}\r\"
+  expect \"Is this correct? (y/N) \
   send -s \"y\r\"
   expect \"Really create? (y/N) \"
   send -s \"y\r\"
@@ -209,7 +208,7 @@ expect $EXPECT_PARAMETERS "
   expect \"What keysize do you want? (3072) \"
   send -s \"4096\r\"
   expect \"Key is valid for? (0) \"
-  send -s \"1y\r\"
+  send -s \"${RANDOM_DURATION}\r\"
   expect \"Is this correct? (y/N) \"
   send -s \"y\n\"
   expect \"Really create? (y/N) \"
@@ -233,7 +232,7 @@ expect $EXPECT_PARAMETERS "
   expect \"What keysize do you want? (3072)\"
   send -s \"4096\r\"
   expect \"Key is valid for? (0) \"
-  send -s \"1y\r\"
+  send -s \"${RANDOM_DURATION}\r\"
   expect \"Is this correct? (y/N) \"
   send -s \"y\r\"
   expect \"Really create? (y/N) \"
