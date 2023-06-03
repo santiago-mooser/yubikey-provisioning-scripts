@@ -225,11 +225,11 @@ if [ -n "${NEW_USER_PIN+x}" ]; then
       expect \"Your selection?\"
       send -s \"1\r\"
       expect \"Enter passphrase:\"
-      send -s \"${CURRENT_USER_PIN\r}\"
+      send -s \"${CURRENT_USER_PIN}\r\"
       expect \"Enter passphrase:\"
-      send -s \"${NEW_USER_PIN\r}\"
+      send -s \"${NEW_USER_PIN}\r\"
       expect \"Enter passphrase:\"
-      send -s \"${NEW_USER_PIN\r}\"
+      send -s \"${NEW_USER_PIN}\r\"
       expect {
         -re \"Bad PIN'       { puts \"\n BAD USER PIN!'; exit 1 }
         -re \"PIN blocked'   { puts \"\n PIN BLOCKED!'; exit 1 }
@@ -265,11 +265,11 @@ if [ -n "${NEW_ADMIN_PIN+x}" ]; then
       expect \"Your selection?\"
       send -s \"3\r\"
       expect \"Enter passphrase:\"
-      send -s \"${CURRENT_ADMIN_PIN\r}\"
+      send -s \"${CURRENT_ADMIN_PIN}\r\"
       expect \"Enter passphrase:\"
-      send -s \"${NEW_ADMIN_PIN\r}\"
+      send -s \"${NEW_ADMIN_PIN}\r\"
       expect \"Enter passphrase:\"
-      send -s \"${NEW_ADMIN_PIN\r}\"
+      send -s \"${NEW_ADMIN_PIN}\r\"
       expect {
         -re \"Bad PIN\"       { puts \"\n BAD ADMIN PIN!\"; exit 1 }
         -re \"PIN blocked\"   { puts \"\n PIN BLOCKED!\"; exit 1 }
@@ -305,13 +305,13 @@ if [ -n "${FIRST_NAME}" ] || [ -n "${LAST_NAME}" ]; then
     expect \"gpg/card>\"
     send -s \"name\r\"
     expect \"Cardholder's surname:\"
-    send -s \"${LAST_NAME\r}\"
+    send -s \"${LAST_NAME}\r\"
     expect \"Cardholder's given name:\"
-    send -s \"${FIRST_NAME\r}\"
+    send -s \"${FIRST_NAME}\r\"
     expect {
         \"gpg/card>\"           { send -s \"q\r\" }
         \"Enter passphrase:\"   {
-            send -s \"${CURRENT_ADMIN_PIN\r}\"; expect {
+            send -s \"${CURRENT_ADMIN_PIN}\r\"; expect {
               -re \"Bad PIN\"       { puts \"\n BAD ADMIN PIN!\"; exit 1 }
               -re \"PIN blocked\"   { puts \"\n PIN BLOCKED!\"; exit 1 }
               \"gpg/card>\"         { send -s \"q\r\"; }
@@ -331,7 +331,7 @@ if [ -n "${FIRST_NAME}" ] || [ -n "${LAST_NAME}" ]; then
 fi
 
 # If the public key url is declared, change it on the yubikey
-if [ -n "${PUK_URL+x}" ]; then
+if [ -n "${PUK_URL}" ]; then
 
   # Check that the current admin pin is provided
   if [ -n "${CURRENT_ADMIN_PIN}" ]; then
@@ -346,7 +346,7 @@ if [ -n "${PUK_URL+x}" ]; then
       expect \"gpg/card>\"
       send -s \"url\r\"
       expect \"URL to retrieve public key:\"
-      send -s \"${PUK_URL\r}\"
+      send -s \"${PUK_URL}\r\"
       expect {
         \"gpg/card>\"           { send -s \"q\r\" }
         \"Enter passphrase:\"   {
@@ -370,7 +370,7 @@ if [ -n "${PUK_URL+x}" ]; then
 fi
 
 # If the username is declared, change it on the yubikey
-if [ -n "${KEY_USERNAME+x}" ]; then
+if [ -n "${KEY_USERNAME}" ]; then
 
   if expect ${EXPECT_PARAMETERS} "
     set timeout 5
@@ -381,7 +381,7 @@ if [ -n "${KEY_USERNAME+x}" ]; then
     expect \"gpg/card>\"
     send -s \"login\r\"
     expect \"Login data (account name):\"
-    send -s \"${KEY_USERNAME\r}\"
+    send -s \"${KEY_USERNAME}\r\"
     expect \"gpg/card>\"
     send -s \"q\r\"
     expect eof"; then
@@ -393,7 +393,7 @@ if [ -n "${KEY_USERNAME+x}" ]; then
 fi
 
 # If the salutation is declared, change it on the yubikey
-if [ -n "${SALUTATION+x}" ]; then
+if [ -n "${SALUTATION}" ]; then
   if [ ! "${SALUTATION}" == "M" ] && [ ! "${SALUTATION}" == "F" ]; then
     red "Salutation must be one of the following values: [M, F]"
     exit 1
@@ -407,7 +407,7 @@ if [ -n "${SALUTATION+x}" ]; then
     expect \"gpg/card>\"
     send -s \"salutation\r\"
     expect \"Salutation (M = Mr., F = Ms., or space):\"
-    send -s \"${SALUTATION\r}\"
+    send -s \"${SALUTATION}\r\"
     expect \"gpg/card>\"
     send -s \"q\r\"
     expect eof"

@@ -171,7 +171,7 @@ while [[ $# -gt 0 ]]; do
       shift # pass variable
       ;;
     --username*)
-      KEY_USERNAME="$2" # Set the GPG password variable
+      KEY_USERNAME="$2" # Set the GPG username variable
       shift
       shift
       ;;
