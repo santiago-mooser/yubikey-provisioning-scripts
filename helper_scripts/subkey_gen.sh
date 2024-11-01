@@ -121,7 +121,7 @@ fi
 
 
 # Generate random duration between 1 year and 1.5 years
-RANDOM_DURATION=$(( RANDOM % 183 + 365 ))d
+RANDOM_DURATION=$(( RANDOM % 183 + 365 )) # the default unit is days
 
 EXPECT_PARAMETERS="-c"
 
@@ -195,7 +195,7 @@ expect ${EXPECT_PARAMETERS} "
   send -s \"4096\r\"
   expect \"Key is valid for? (0) \"
   send -s \"${RANDOM_DURATION}\r\"
-  expect \"Is this correct? (y/N) \
+  expect \"Is this correct? (y/N) \"
   send -s \"y\r\"
   expect \"Really create? (y/N) \"
   send -s \"y\r\"
