@@ -107,3 +107,13 @@ Some extra documentation can be found in the [docs/ folder](./docs/).
 ## Authors
 
 Santiago Espinosa Mooser - (yps@santiago-mooser.com)
+
+## Star History
+
+<a href="https://www.star-history.com/#santiago-mooser/yubikey-provisioning-scripts&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=santiago-mooser/yubikey-provisioning-scripts&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=santiago-mooser/yubikey-provisioning-scripts&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=santiago-mooser/yubikey-provisioning-scripts&type=Date" />
+ </picture>
+</a>
