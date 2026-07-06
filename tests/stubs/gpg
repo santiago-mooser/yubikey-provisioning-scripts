@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Fake gpg for responder unit tests. Plays a scripted status dialogue so we
+# can prove gpg_card_drive answers prompts correctly and fails closed —
+# without a smartcard. Real gpg is NOT involved.
+#
+# Scenario DSL ($FAKE_GPG_SCENARIO), one directive per line:
+#   S <text>   emit "[GNUPG:] <text>" to the status fd (our stdout)
+#   R <label>  read one command line from stdin, append "<label>=<line>"
+#              to $FAKE_GPG_RECORD
+#   X <code>   exit with <code>
+#   # ...      comment / blank ignored
+set -u
+: > "${FAKE_GPG_RECORD}"
+# Scenario on fd 3 so the `R` directive's read still consumes the caller's
+# command-fd (our stdin, fd 0), not the scenario file.
+while IFS= read -r spec <&3; do
+  verb=${spec%% *}; rest=${spec#"${verb}"}; rest=${rest# }
+  case ${verb} in
+    S) printf '[GNUPG:] %s\n' "${rest}" ;;
+    # Only record a command actually received. If the caller aborts and closes
+    # the pipe, read fails and we stop — no spurious empty record.
+    R) IFS= read -r ans || break; printf '%s=%s\n' "${rest}" "${ans}" >> "${FAKE_GPG_RECORD}" ;;
+    X) exit "${rest}" ;;
+    '#'|'') : ;;
+    *) printf 'fake-gpg: bad directive: %s\n' "${spec}" >&2; exit 99 ;;
+  esac
+done 3< "${FAKE_GPG_SCENARIO}"
+exit 0

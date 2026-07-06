@@ -1,420 +1,320 @@
-#!/bin/bash
+#!/usr/bin/env bash
+#
+# yubikey_provision.sh — provision a YubiKey's OpenPGP applet with a fresh
+# certify-only master key and sign/encrypt/auth subkeys, generated on the
+# host and moved to the card.
+#
+# v2 rewrite: batch gpg interfaces + a status-driven responder instead of
+# expect prompt-scraping; safe ordering (artifacts exported before the
+# destructive card transfer); opt-in keyserver upload; single secret summary.
+#
+# See --help for options and README.md for the full workflow and caveats.
 
-###########################################################
-##                   READ BEFORE USE                     ##
-###########################################################
-##                                                       ##
-##   This script is used to provision a new smartcard    ##
-##   by generating a master key, the corresponding       ##
-##   subkeys, uploading those subkeys to the             ##
-##   connected smartcard and the company keyserver.      ##
-##                                                       ##
-##   Target OS Version:                                  ##
-##       - Ubuntu 20.04.4 LTS                            ##
-##       - Ubuntu 22.04 LTS                              ##
-##       - MacOS ?????                                   ##
-##                                                       ##
-##   How to use:                                         ##
-##      1. Insert new end-user (employee) yubikey        ##
-##      2. Run script:                                   ##
-##            ./yubikey_provision.sh                     ##
-##                                                       ##
-##         Optionally, you can also add other commands:  ##
-##            ./yubikey_provision.sh --yes \             ##
-##            --first-name "Firstname" \                 ##
-##            --last-name "Lastname" \                   ##
-##            --email firstname.lastname@example.com \  ##
-##            --comment "Key comment" \                  ##
-##            --user-pin 124356 \                        ##
-##            --admin-pin 12346578                       ##
-##                                                       ##
-##         This will skip promts and generate a key with ##
-##         the provided information as well as change    ##
-##         the smartcard pins to the provided ones       ##
-##                                                       ##
-##      3. Sit back while the script generates a new     ##
-##         key, adds it to the yubikey and uploads the   ##
-##         public keyfile to the company keyserver       ##
-##                                                       ##
-###########################################################
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=lib/common.sh
+source "${SCRIPT_DIR}/lib/common.sh"
+# shellcheck source=lib/gpg_keys.sh
+source "${SCRIPT_DIR}/lib/gpg_keys.sh"
+# shellcheck source=lib/gpg_card.sh
+source "${SCRIPT_DIR}/lib/gpg_card.sh"
 
-VERSION="1.2.6"
+# ------------------------------------------------------------- defaults
 
-# Set the right user
-if [ -z ${SUDO_USER+x} ]; then
-  USER_NAME=${USER}
-else
-  USER_NAME=${SUDO_USER}
-fi
+YESMODE=0
+BACKUP_MASTER=0
+DO_UPLOAD=0
+KEY_ALGO="rsa4096"
+KEY_EXPIRY="2y"
+TOUCH_POLICY="cached"
+KEYSERVER="https://keys.openpgp.org"
+OUTPUT_DIR=""
+YK_SERIAL=""
+FIRST_NAME="" LAST_NAME="" KEY_EMAIL="" KEY_COMMENT="" CARD_LOGIN=""
+KEY_PASSPHRASE="" USER_PIN="" ADMIN_PIN=""
+KEY_FPR="" CARD_URL="" KEY_UID=""
+SUBKEY_FPRS=()
 
-# If the script is interrupted, delete tmp dir
-trap cleanup 1 2 3 6
+# Factory OpenPGP defaults the card starts from after a reset.
+CARD_USER_CURRENT="123456"
+CARD_ADMIN_CURRENT="12345678"
 
-function cleanup(){
-  yellow "\nKeyboard interrupt detected! Exiting..."
-  yellow "Cleaning up tmpdir..."
-  rm -rf "${TMPDIR}"
-  exit 0
+usage() {
+  cat <<EOF
+${0##*/} v${VERSION}
+
+Provision a connected YubiKey's OpenPGP applet: factory-reset it, generate a
+new master key + 3 subkeys on this host, move the subkeys to the card, set
+PINs and touch policy, and export the public key and revocation certificate.
+
+Usage: ${0##*/} --email <addr> [options]
+
+Identity:
+  -e, --email <addr>       Email for the key UID (required; prompted if omitted).
+  -f, --first-name <name>  First name (also written to the card as given name).
+  -l, --last-name <name>   Last name  (also written to the card as surname).
+  -c, --comment <text>     UID comment.
+      --login <text>       Card login/account name (defaults to email).
+
+Key parameters:
+      --algo <rsa4096|ed25519>  Key algorithm (default: rsa4096;
+                                ed25519 needs card firmware 5.2.3+).
+      --expiry <spec>      Subkey expiry: e.g. 2y, 18m, 730d, 0=never,
+                           or YYYY-MM-DD (default: 2y).
+      --touch <off|on|fixed|cached|cached-fixed>
+                           Touch policy for all key slots (default: cached).
+
+Secrets (all generated with a CSPRNG if omitted; shown once at the end):
+  -p, --passphrase <str>   Master-key passphrase.
+  -u, --user-pin <pin>     New card user PIN  (>= 6 chars).
+  -a, --admin-pin <pin>    New card admin PIN (>= 8 chars).
+
+Output / distribution:
+  -o, --output-dir <dir>   Where to write public-key.asc, revocation cert, and
+                           (with --backup-master) the secret key backup.
+                           Default: ./yubikey-<fpr8>-<user>.
+      --backup-master      Also export the master + subkey secret keys to the
+                           output dir (encrypted with the passphrase). Off by
+                           default — see README on why you may want this.
+      --upload             Upload the public key to the keyserver (opt-in).
+      --keyserver <url>    Keyserver for --upload (default: ${KEYSERVER}).
+      --serial <serial>    Target a specific YubiKey when several are attached.
+
+Misc:
+  -y, --yes                Do not prompt for confirmation (non-interactive).
+  -h, --help               Show this help and exit.
+  -v, --version            Print version and exit.
+
+WARNING: this FACTORY-RESETS the connected YubiKey's OpenPGP applet,
+irreversibly erasing any OpenPGP keys already on it.
+EOF
 }
 
-# Set functions so instructions can be printed in ❀pretty colors❀
-set +x
-function red(){
-    echo -e "\x1B[31m $1 \x1B[0m"
-    if [ -n "${2}" ]; then
-    echo -e "\x1B[31m $($2) \x1B[0m"
-    fi
-}
-function green(){
-    echo -e "\x1B[32m $1 \x1B[0m"
-    if [ -n "${2}" ]; then
-    echo -e "\x1B[32m $($2) \x1B[0m"
-    fi
-}
-function yellow(){
-    echo -e "\x1B[33m $1 \x1B[0m"
-    if [ -n "${2}" ]; then
-    echo -e "\x1B[33m $($2) \x1B[0m"
-    fi
-}
+# ------------------------------------------------------------- arg parse
 
-# The usage function just prints how the script works:
-function usage()
-{
-   cat << HEREDOC
-   This script provisions a yubikey by generating a master key, 3 subkeys and moving the subkeys to the yubikey. Please read the documentation for more information.
-
-   Usage: ${progname} [-e|--email EMAIL_ADDRESS] [-u|--user-pin USER_PIN] [-a|--admin-pin ADMIN_PIN] [-y|--yes]
-
-   optional arguments:
-     -h, --help           show this help message and exit.
-     -e, --email          provide email used for PGP key. If it is not provided, the user is promted for an email.
-     -f, --first-name     provide first name used for PGP key.
-     -l, --last-name      provide last name used for PGP key.
-     -c, --comment        provide comment used for PGP key. Defaults to an empty string.
-         --username       provide username used for PGP key. Defaults to an empty string.
-     -p, --password       provide password used for PGP key. If it is not provided, a random one is generated.
-     -u, --user-pin       provide new user pin for the yubikey. If none is provided, a random one is generated.
-     -a, --admin-pin      provide new admin pin for the yubikey. If none is provided, a random one is generated.
-     -y, --yes            skips prompts to reset the yubikey.
-     -v, --version        prints out the version number.
-
-HEREDOC
-}
-progname=$(basename "$0")
-
-
-# Check that the script is NOT running as root
-if [ ! "${EUID}" -ne 0 ]; then
-  red "Please don't run this script as root!"
-  usage
-  exit 1
-fi
-
-# Check that the dependent scripts are here
-declare -a script_list=('gen_key.sh' 'key_to_card.sh' 'subkey_gen.sh' 'yubikey_change_attributes.sh')
-for script in "${script_list[@]}"; do
-    if [ ! -f "./helper_scripts/${script}" ]; then
-        red "${script} missing"
-        exit 1
-    fi
-done
-
-# Check that type of OS the script is running on
-unameOut="$(uname -s)"
-case "${unameOut}" in
-    Linux*)     machine=Linux;;
-    Darwin*)    machine=Mac;;
-    *)          machine="UNKNOWN:${unameOut}" && { red "Unknown OS!"; exit 1; }
-esac
-
-if [ "${machine}" == "Mac" ]; then
-  TMPDIR=$(mktemp -d)
-else
-  TMPDIR=$(mktemp --tmpdir=/dev/shm --directory)
-fi
-
-# Set home directory for gnupg
-GNUPGHOME=${TMPDIR}
-
-# Set vars so we can check values later on
-FIRST_NAME=""
-LAST_NAME=""
-yesmode="n"
-
-# Parse arguments... So complicated in bash....
-POSITIONAL_ARGS=()
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    -e|--email)
-      KEY_EMAIL="$2" # Set the GPG email variable
-      shift # pass argument
-      shift # pass variable
-      ;;
-    -f|--first-name)
-      FIRST_NAME="$2" # Set the GPG name variable
-      shift # pass argument
-      shift # pass variable
-      ;;
-    -l|--last-name)
-      LAST_NAME="$2" # Set the GPG name variable
-      shift # pass argument
-      shift # pass variable
-      ;;
-    -c|--comment)
-      KEY_COMMENT="$2" # Set the GPG comment variable
-      shift # pass argument
-      shift # pass variable
-      ;;
-    --username*)
-      KEY_USERNAME="$2" # Set the GPG username variable
-      shift
-      shift
-      ;;
-    -p|--password*)
-      KEY_PASS="$2" # Set the GPG password variable
-      shift
-      shift
-      ;;
-    -u|--user-pin*)
-      USER_PIN="$2"
-      shift
-      shift
-      ;;
-    -a|--admin-pin*)
-      ADMIN_PIN="$2"
-      shift
-      shift
-      ;;
-    -y|--yes)
-      yesmode='y'
-      shift # pass argument
-      ;;
-    -v|--version)
-      echo ${VERSION}
-      exit 0
-      ;;
-    -*)
-      red "Unknown option \"$1\""
-      usage
-      exit 1
-      ;;
-    *)
-      POSITIONAL_ARGS+=("$1") # save positional arg
-      shift # past argument
-      ;;
-  esac
-done
-set -- "${POSITIONAL_ARGS[@]}" # restore positional parameters
-
-# If password not set, generate new random password
-if [ -z ${KEY_PASS+x} ]; then
-  KEY_PASS=$(gpg --gen-random --armor 0 24)
-# Else if password is empty, prompt for confirmation
-elif [ "${KEY_PASS}" == "" ]; then
-  red "Provided password is empty! Continue? [yN] "
-  if [ "${yesmode}" == 'n' ]; then
-    read -r yn
-    case ${yn} in
-      [yY] )
-      ;;
-      * )
-      red "exiting..."
-      exit 1
-      ;;
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      -e|--email)        KEY_EMAIL=$2; shift 2 ;;
+      -f|--first-name)   FIRST_NAME=$2; shift 2 ;;
+      -l|--last-name)    LAST_NAME=$2; shift 2 ;;
+      -c|--comment)      KEY_COMMENT=$2; shift 2 ;;
+      --login)           CARD_LOGIN=$2; shift 2 ;;
+      --algo)            KEY_ALGO=$2; shift 2 ;;
+      --expiry)          KEY_EXPIRY=$2; shift 2 ;;
+      --touch)           TOUCH_POLICY=$2; shift 2 ;;
+      -p|--passphrase)   KEY_PASSPHRASE=$2; shift 2 ;;
+      -u|--user-pin)     USER_PIN=$2; shift 2 ;;
+      -a|--admin-pin)    ADMIN_PIN=$2; shift 2 ;;
+      -o|--output-dir)   OUTPUT_DIR=$2; shift 2 ;;
+      --backup-master)   BACKUP_MASTER=1; shift ;;
+      --upload)          DO_UPLOAD=1; shift ;;
+      --keyserver)       KEYSERVER=$2; shift 2 ;;
+      --serial)          YK_SERIAL=$2; shift 2 ;;
+      -y|--yes)          YESMODE=1; shift ;;
+      -h|--help)         usage; exit 0 ;;
+      -v|--version)      echo "${VERSION}"; exit 0 ;;
+      --) shift; break ;;
+      -*) die "Unknown option: $1 (see --help)." ;;
+      *)  die "Unexpected argument: $1 (see --help)." ;;
     esac
+  done
+}
+
+# ---------------------------------------------------- validation & setup
+
+detect_os() {
+  case "$(uname -s)" in
+    Linux*)  MACHINE=Linux ;;
+    Darwin*) MACHINE=Mac ;;
+    *)       die "Unsupported OS: $(uname -s)." ;;
+  esac
+}
+
+resolve_config() {
+  if [[ -z ${KEY_EMAIL} ]]; then
+    (( YESMODE )) && die "--email is required in --yes mode."
+    while :; do
+      read -r -p "Email for the PGP key: " KEY_EMAIL
+      validate_email "${KEY_EMAIL}" && break
+      warn "Invalid email; expected local@domain.tld."
+    done
   fi
-fi
+  validate_email "${KEY_EMAIL}" || die "Invalid email: ${KEY_EMAIL}"
 
-# If email variable does not exist....
-if [ -z ${KEY_EMAIL+x} ]; then
-  # Get email from user and verify syntax
-  while true; do
-    read -rp "Please provide user email: " KEY_EMAIL
-    # Check if it's a valid email...
-    if [[ ! "${KEY_EMAIL}" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$  ]]; then
-      yellow "Please provide a valid email: <username>@<domain>"
-      continue
-    else
-      break
-    fi
-  done
-elif [[ ! "${KEY_EMAIL}" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
-  red "Please provide a valid email: <username>@<domain>"
-  exit 1
-fi
+  [[ ${KEY_ALGO} == rsa4096 || ${KEY_ALGO} == ed25519 ]] || die "--algo must be rsa4096 or ed25519."
+  validate_expiry "${KEY_EXPIRY}"
+  case ${TOUCH_POLICY} in off|on|fixed|cached|cached-fixed) ;; *) die "--touch must be off|on|fixed|cached|cached-fixed." ;; esac
 
-# Set the name for the key in case first and last name are not provided
-if [ "${FIRST_NAME}" == "" ] && [ "${LAST_NAME}" == "" ]; then
-  KEY_NAME=${USER_NAME}
-else
-  KEY_NAME="${FIRST_NAME} ${LAST_NAME}"
-fi
+  [[ -n ${KEY_PASSPHRASE} ]] || KEY_PASSPHRASE=$(random_passphrase)
+  [[ -n ${USER_PIN} ]]  || USER_PIN=$(random_digits 6)
+  [[ -n ${ADMIN_PIN} ]] || ADMIN_PIN=$(random_digits 8)
+  validate_pin "User PIN" "${USER_PIN}" 6
+  validate_pin "Admin PIN" "${ADMIN_PIN}" 8
 
-# If either the user pin or admin pin variables don't exist,
-# automatically generate random pins
-if [ -z ${USER_PIN+x} ]; then
-  USER_PIN=("$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))")
-fi
+  local name
+  if [[ -n ${FIRST_NAME}${LAST_NAME} ]]; then
+    name=$(printf '%s %s' "${FIRST_NAME}" "${LAST_NAME}"); name=${name## }; name=${name%% }
+  else
+    name=${USER_NAME}
+  fi
+  (( ${#name} >= 5 )) || die "Key name '${name}' is under 5 characters (gpg requires >= 5); pass --first-name/--last-name."
+  KEY_UID=${name}
+  [[ -n ${KEY_COMMENT} ]] && KEY_UID+=" (${KEY_COMMENT})"
+  KEY_UID+=" <${KEY_EMAIL}>"
 
-# Print instance information
-green "Key name:\t\t\t${KEY_NAME}"
-green "Key email:\t\t\t${KEY_EMAIL}"
-green "Key comment:\t\t\t${KEY_COMMENT}"
-green "Key password: \t\t\t'${KEY_PASS}'"
-green "New Smartcard user pin:\t${USER_PIN}"
-if [ -z ${ADMIN_PIN+x} ]; then
-  ADMIN_PIN=("$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))$(( RANDOM % 10 ))")
-  green "New Smartcard admin pin:\t${ADMIN_PIN}"
-fi
+  [[ -n ${CARD_LOGIN} ]] || CARD_LOGIN=${KEY_EMAIL}
+}
 
-# If it's running linux, we want to check the entropy level
-# This is not needed in MacOS as they persist entropy between boots.
-if [ "${machine}" == "Linux" ]; then
-  # Add more entropy if less than 3k is available
-  entropy_available=$(cat /proc/sys/kernel/random/entropy_avail)
-  pool_size=$(cat /proc/sys/kernel/random/poolsize)
-  entropy_percentage=$(echo "(${entropy_available}*100/${pool_size})"|bc)
-  while true; do
-    if [ "${entropy_percentage}" -le "80" ];
-      then
-        echo "SCD RANDOM 512" | gpg-connect-agent | sudo tee /dev/random &>/dev/null
-        entropy_available=$(cat /proc/sys/kernel/random/entropy_avail)
-        pool_size=$(cat /proc/sys/kernel/random/poolsize)
-        entropy_percentage=$(echo "(${entropy_available}*100/${pool_size})"|bc)
-        echo -ne "Entropy available: \t${entropy_available}/${pool_size\r}"
-    else
-      break
-    fi
-  done
-  green "System entropy available: \t${entropy_available}/${pool_size}"
-fi
-
-if [ "${yesmode}" == "y" ]; then
-  yellow "WARNING: Prompts disabled!"
-fi
-
-
-# Harden gpg configuration
-echo """
-personal-cipher-preferences AES256 AES192 AES
-personal-digest-preferences SHA512 SHA384 SHA256
-personal-compress-preferences ZLIB BZIP2 ZIP Uncompressed
-default-preference-list SHA512 SHA384 SHA256 AES256 AES192 AES ZLIB BZIP2 ZIP Uncompressed
-cert-digest-algo SHA512
-s2k-digest-algo SHA512
-s2k-cipher-algo AES256
-charset utf-8
-fixed-list-mode
-no-comments
-no-emit-version
-keyid-format 0xlong
-list-options show-uid-validity
-verify-options show-uid-validity
-with-fingerprint
-require-cross-certification
-no-symkey-cache
-use-agent
-throw-keyids
-""" > "${GNUPGHOME}"/gpg.conf
-
-# Prompt to reset smartcard. Skip if -y or --yes is passed to the script
-yellow """
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-  !! WARNING! The connected yubikey is about to be reset.  !!
-  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-  Continue? [Y/n] """
-if [ "${yesmode}" == "n" ]; then
-  read -r yn
-  case ${yn} in
-    [nN] ) echo exiting...;
-      exit;;
-    * ) : ;;
+# Referenced by cleanup() in common.sh to tell the operator what state the
+# hardware is in after an abort.
+card_state_hint() {
+  case ${PROVISION_STAGE} in
+    "not started"|"selecting yubikey")
+      echo "Card was not modified. Safe to re-run." ;;
+    "factory reset")
+      echo "Card was reset to factory defaults (no keys). Safe to re-run." ;;
+    "generating keys"|"exporting artifacts")
+      echo "Card was factory-reset but no keys were transferred. Re-run to provision." ;;
+    "transferring keys to card")
+      echo "Key transfer was interrupted; the card may hold a partial key set. Re-run (it factory-resets first)." ;;
+    "setting touch policy"|"changing card user PIN")
+      echo "Keys are on the card. User PIN is still ${CARD_USER_CURRENT}, admin PIN ${CARD_ADMIN_CURRENT}. Re-running factory-resets and starts over." ;;
+    "changing card admin PIN")
+      echo "Keys are on the card and the user PIN is set. Admin PIN is still ${CARD_ADMIN_CURRENT}; set it with 'gpg --change-pin' (option 3)." ;;
+    "setting card attributes"|"uploading key"|"done")
+      echo "Keys, PINs and touch policy are set; the key is usable. Only card attributes/upload remained." ;;
+    *) echo "State unknown — inspect with: gpg --card-status" ;;
   esac
-fi
+}
 
-# Reset smartcard so we can upload the new keys (since the admin pin is reset)
-./helper_scripts/reset_smartcard.sh --gnupg-home "${GNUPGHOME}" || { red "Failed to reset smartcard!";  exit 1; }
-green "Smartcard successfully reset"
+# ------------------------------------------------------------- pipeline
 
-# Create master PGP key
-bash ./helper_scripts/gen_key.sh --gnupg-home "${GNUPGHOME}" \
-                                 --passphrase "${KEY_PASS}" \
-                                 --name "${KEY_NAME}" \
-                                 --email "${KEY_EMAIL}" \
-                                 --comment "${KEY_COMMENT}" || { red "Failed to generate masterkey!"; exit 1; }
-KEY_ID=$(gpg --homedir "${GNUPGHOME}" --list-secret-keys --with-colons | grep "${KEY_EMAIL}" -B 2 | grep fpr | awk '{split($0,a,":"); print a[10]}')
-if [ "${KEY_ID}" == "" ]; then
-  red "Error creating masterkey! Exiting...."
-  exit 1
-fi
-green "User Master key successfully generated. Key ID: ${KEY_ID}"
+print_plan() {
+  info "Provisioning plan:"
+  info "  Key UID:        ${KEY_UID}"
+  info "  Algorithm:      ${KEY_ALGO}"
+  info "  Subkey expiry:  ${KEY_EXPIRY}"
+  info "  Touch policy:   ${TOUCH_POLICY}"
+  info "  Output dir:     ${OUTPUT_DIR}"
+  info "  Backup master:  $( ((BACKUP_MASTER)) && echo 'yes (secret key WILL be exported)' || echo 'no' )"
+  info "  Upload:         $( ((DO_UPLOAD)) && echo "yes -> ${KEYSERVER}" || echo 'no' )"
+  info "  YubiKey serial: ${YK_SERIAL}"
+}
 
-# Create subkeys and move them to smartcard
-bash ./helper_scripts/subkey_gen.sh --gnupg-home "${GNUPGHOME}" \
-                                    --key-id "${KEY_ID}" \
-                                    --passphrase "${KEY_PASS}" || { red "Failed to generate subkeys!"; exit 1; }
-green "Subkeys successfully generated"
+upload_key() {
+  info "Uploading public key to ${KEYSERVER} ..."
+  if ! curl -fsS --data-urlencode "keytext@${OUTPUT_DIR}/public-key.asc" \
+        "${KEYSERVER}/vks/v1/upload" >>"${RUN_LOG}" 2>&1; then
+    warn "Keyserver upload failed. The key is on the card and saved locally; upload later with:"
+    warn "  gpg --keyserver ${KEYSERVER} --send-keys ${KEY_FPR}"
+    return 1
+  fi
+  CARD_URL="${KEYSERVER}/vks/v1/by-fingerprint/${KEY_FPR^^}"
+  info "Upload accepted. NOTE: keys.openpgp.org serves the UID only after you verify the email;"
+  info "until then a 'fetch' from the card URL returns a key without identity (stock gpg rejects it)."
+}
 
-# Uncomment this if you would like to save the private keys!
-# gpg --homedir "${GNUPGHOME}" --pinentry-mode loopback --passphrase "${KEY_PASS}" --armor --export-secret-keys "${KEYID}" > mastersub.key || { red "Unable to save PGP key password!"; exit 1; }
-# gpg --homedir "${GNUPGHOME}" --pinentry-mode loopback --passphrase "${KEY_PASS}" --armor --export-secret-subkeys "${KEYID}" > sub.key || { red "Unable to save PGP key password!"; exit 1; }
-# echo "${KEY_PASS}" | tee new_keypass.txt &>/dev/null || { red "Unable to save PGP key password!"; exit 1; }
+final_summary() {
+  local backup_lines="" backup_note upload_note=""
+  if (( BACKUP_MASTER )); then
+    backup_lines=$'\n  master-secret-key.asc       (OFFLINE backup — needed to renew/extend subkeys)\n  secret-subkeys.asc'
+    backup_note="is backed up in the output dir above."
+  else
+    backup_note="was NOT backed up: you cannot extend subkey expiry or add subkeys later. Re-run with --backup-master if you need that."
+  fi
+  (( DO_UPLOAD )) && [[ -n ${CARD_URL} ]] && upload_note="Uploaded to ${KEYSERVER} (verify the email to publish the UID)."
 
-bash ./helper_scripts/key_to_card.sh --gnupg-home "${GNUPGHOME}" \
-                                     --key-id "${KEY_ID}" \
-                                     --passphrase "${KEY_PASS}" \
-                                     --admin-pin "12345678" || { red "Failed to move subkeys to card!"; exit 1; }
-green "Subkeys successfully transferred to card"
+  cat >&2 <<EOF
 
+==================== PROVISIONING COMPLETE ====================
+Record these secrets now — they are shown only once and were not written to
+disk (except a --backup-master export, if you asked for one).
 
-# Get GPG public key
-PUBLIC_KEY=$(gpg --homedir "${TMPDIR}" --export-options export-minimal --armor --export "${KEY_ID[0]}")
+  Key fingerprint  : ${KEY_FPR}
+  Key UID          : ${KEY_UID}
+  Master passphrase: ${KEY_PASSPHRASE}
+  Card user PIN    : ${USER_PIN}
+  Card admin PIN   : ${ADMIN_PIN}
+  Subkey expiry    : $(subkey_expiry_date)
+  Touch policy     : ${TOUCH_POLICY}
 
-# Upload public key to keyserver
-yellow """Upload yubikey to public openPGP keyserver? (recommended if you will not be using this in a company)"""
-if [ "${yesmode}" == "n" ]; then
-  read -r yn
-  case ${yn} in
-    [nN] ) red "Please make sure to save public key as it is not possible to extract it from the yubieky later!"
-    sleep 5;;
-    * )
-    CONFIRMATION_URL="$(echo "${PUBLIC_KEY}" | curl -T - https://keys.openpgp.org/ | grep http)" || { red "Unable to upload public key to server!"; exit 1; };
-  esac
-else
-  CONFIRMATION_URL="$(echo "${PUBLIC_KEY}" | curl -T - https://keys.openpgp.org/ | grep http)" || { red "Unable to upload public key to server!"; exit 1; };
-fi
+Artifacts written to ${OUTPUT_DIR}:
+  public-key.asc              (import on your machines / share)
+  revocation-certificate.asc  (store OFFLINE; revokes a lost key)${backup_lines}
 
+The master secret key is NOT on the card and ${backup_note}
+${upload_note}
+==============================================================
+EOF
+}
 
-# Finally, change the attributes of the yubikey,
-# including the pin, name and puk url
-echo "Changing yubikey pins"
-./helper_scripts/yubikey_change_attributes.sh --gnupg-home "${GNUPGHOME}" \
-                                              --current-user-pin "123456" \
-                                              --current-admin-pin "12345678" \
-                                              --new-user-pin "${USER_PIN}" \
-                                              --new-admin-pin "${ADMIN_PIN}" \
-                                              --username "${KEY_USERNAME}" \
-                                              --first-name "${FIRST_NAME}" \
-                                              --last-name "${LAST_NAME}" \
-                                              --key-url "https://keys.openpgp.org//vks/v1/by-fingerprint/${KEY_ID}" || { red "Failed to change yubikey attributes!"; exit 1; }
-green "Yubikey attributes successfully changed."
+main() {
+  require_not_root
+  detect_os
+  parse_args "$@"
 
-echo ""
-# And print all the details:
-green "public key:\n${PUBLIC_KEY}"
-green "Key password: \"${KEY_PASS}\""
-green "User pin: ${USER_PIN}"
+  if [[ -n ${SUDO_USER-} ]]; then USER_NAME=${SUDO_USER}; else USER_NAME=${USER-user}; fi
 
-yellow "Please visit the following url to confirm the public key:"
-echo "${CONFIRMATION_URL}"
+  # Validate arguments first (pure, no external tools) so a typo is reported
+  # without needing the hardware toolchain installed. Then gate on deps.
+  resolve_config
+  require_deps gpg gpgconf ykman curl
+  install_traps
 
-# Remove TMPDIR
-green "Deleting TMPDIR: ${TMPDIR}"
-stty sane
-rm -rf "${TMPDIR}"
+  PROVISION_STAGE="selecting yubikey"
+  select_yubikey
+
+  [[ -n ${OUTPUT_DIR} ]] || OUTPUT_DIR="__AUTO__"
+
+  print_plan
+  warn "This will FACTORY-RESET the OpenPGP applet on YubiKey serial ${YK_SERIAL}."
+  confirm "Proceed?" || die "Aborted by user."
+
+  setup_tmp_gnupghome
+
+  PROVISION_STAGE="factory reset"
+  info "Factory-resetting OpenPGP applet on ${YK_SERIAL} ..."
+  card_factory_reset
+
+  PROVISION_STAGE="generating keys"
+  info "Generating ${KEY_ALGO} master key ..."
+  generate_master_key "${KEY_UID}"
+  info "Master key: ${KEY_FPR}"
+  info "Generating subkeys (sign/encrypt/auth, expiry ${KEY_EXPIRY}) ..."
+  generate_subkeys
+
+  [[ ${OUTPUT_DIR} == "__AUTO__" ]] && OUTPUT_DIR="./yubikey-${KEY_FPR: -8}-${USER_NAME}"
+
+  PROVISION_STAGE="exporting artifacts"
+  info "Exporting public key and revocation certificate to ${OUTPUT_DIR} ..."
+  export_artifacts
+
+  PROVISION_STAGE="transferring keys to card"
+  info "Moving subkeys to the card (this destroys the on-disk subkey secrets) ..."
+  keytocard_subkeys
+  verify_keys_on_card
+  info "All three subkeys confirmed on the card."
+
+  PROVISION_STAGE="setting touch policy"
+  if [[ ${TOUCH_POLICY} != off ]]; then
+    info "Setting touch policy '${TOUCH_POLICY}' on all slots ..."
+    set_touch_policy "${TOUCH_POLICY}"
+  fi
+
+  change_card_pins
+
+  PROVISION_STAGE="setting card attributes"
+  set_card_attributes
+
+  if (( DO_UPLOAD )); then
+    PROVISION_STAGE="uploading key"
+    upload_key || true
+  fi
+
+  test_signature || true
+
+  PROVISION_STAGE="done"
+  final_summary
+}
+
+main "$@"
