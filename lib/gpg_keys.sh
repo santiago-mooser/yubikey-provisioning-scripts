@@ -49,6 +49,7 @@ no-emit-version
 keyid-format 0xlong
 with-fingerprint
 require-cross-certification
+require-secmem
 no-symkey-cache
 EOF
 }

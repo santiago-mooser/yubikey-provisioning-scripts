@@ -17,12 +17,13 @@ the public key and a revocation certificate. It automates the workflow from
 ## Table of contents
 
 - [What it does](#what-it-does)
-- [Requirements](#requirements)
+- [Install & requirements](#install--requirements)
 - [Usage](#usage)
 - [What you get, and what you must keep](#what-you-get-and-what-you-must-keep)
 - [Important behaviours and caveats](#important-behaviours-and-caveats)
 - [How it works](#how-it-works)
 - [Testing](#testing)
+- [Relationship to drduh's YubiKey-Guide](#relationship-to-drduhs-yubikey-guide)
 - [What changed in v2](#what-changed-in-v2)
 - [Author](#author)
 
@@ -50,27 +51,79 @@ Given a connected YubiKey, `yubikey_provision.sh`:
 10. Prints all secrets **once** at the end. The temp home (with the master
     secret key) is shredded on exit, on **every** path including errors.
 
-## Requirements
+## Install & requirements
 
-- `bash` 4+, `gpg` (GnuPG 2.2+), `gpgconf`
-- `ykman` ([yubikey-manager](https://developers.yubico.com/yubikey-manager/))
-- `curl` (only used with `--upload`)
-- `od`, `tr`, `shred` (coreutils; `shred` optional, used for secure temp cleanup)
+Runs on **NixOS, other Linux (Ubuntu/Debian), and macOS**. The tool shells out
+to `gpg`/`gpgconf` (GnuPG 2.2+), `ykman` (yubikey-manager), `curl` (only for
+`--upload`), and coreutils (`od`, `tr`, `shred`, `mktemp`, `stty`, `date`). It
+refuses to run as root and validates all arguments before touching hardware.
 
-On NixOS / nix:
+On **Linux**, both `ykman` and gpg's card access go through **PC/SC**, so the
+`pcscd` daemon must be running and gpg must be told to use PC/SC (otherwise its
+internal CCID driver and `pcscd` fight over the reader — this is the same
+`disable-ccid` caveat documented in drduh's guide). See the per-OS notes below.
+macOS uses its built-in PC/SC stack and needs no `pcscd`.
+
+### With Nix (flake) — recommended
+
+The flake bundles gpg, ykman, and (on Linux) a ready `scdaemon.conf`, so no
+manual GnuPG smartcard configuration is needed — you only need `pcscd` running.
 
 ```bash
-nix-shell -p gnupg yubikey-manager --command './yubikey_provision.sh --help'
+# Run directly from GitHub (no clone):
+nix run github:santiago-mooser/yubikey-provisioning-scripts -- --email you@example.com
+
+# Or a dev shell with everything (tools + shellcheck) on PATH:
+nix develop github:santiago-mooser/yubikey-provisioning-scripts
+
+# Or install into your profile:
+nix profile install github:santiago-mooser/yubikey-provisioning-scripts
 ```
 
-The script refuses to run as root and validates its arguments before touching
-any hardware.
+On **NixOS**, enable the smartcard daemon in your system config:
+
+```nix
+services.pcscd.enable = true;
+```
+
+(or start it ad hoc with `sudo systemctl start pcscd`). Then `nix run …` as above.
+
+### Ubuntu / Debian
+
+```bash
+sudo apt install gnupg scdaemon pcscd yubikey-manager curl
+sudo systemctl enable --now pcscd
+# Tell gpg to use PC/SC (so it doesn't fight pcscd for the reader):
+echo "disable-ccid" >> ~/.gnupg/scdaemon.conf
+gpgconf --kill scdaemon gpg-agent
+
+git clone https://github.com/santiago-mooser/yubikey-provisioning-scripts.git
+cd yubikey-provisioning-scripts
+./yubikey_provision.sh --email you@example.com
+```
+
+If `yubikey-manager` isn't packaged for your release, install it with
+`pipx install yubikey-manager` (or `pip install --user yubikey-manager`).
+
+### macOS
+
+```bash
+brew install gnupg yubikey-manager           # pcsc is built into macOS
+git clone https://github.com/santiago-mooser/yubikey-provisioning-scripts.git
+cd yubikey-provisioning-scripts
+./yubikey_provision.sh --email you@example.com
+```
+
+Provisioning itself uses loopback pinentry, so no `pinentry-mac` is required to
+run this tool — but you will want `pinentry-mac` (and, for GUI/SSH use, the
+gpg-agent LaunchAgent setup from drduh's guide) to *use* the key afterwards.
+The temp GnuPG home is created on a normal temp dir on macOS (no `/dev/shm`);
+it is shredded on exit, but overwrite-in-place is not guaranteed on APFS/SSD —
+prefer a Linux tmpfs run for a high-assurance ceremony.
 
 ## Usage
 
 ```bash
-git clone https://github.com/santiago-mooser/yubikey-provisioning-scripts.git
-cd yubikey-provisioning-scripts
 ./yubikey_provision.sh --email you@example.com
 ```
 
@@ -148,6 +201,8 @@ lib/common.sh             logging, EXIT-trap cleanup/shred, CSPRNG, validation
 lib/gpg_keys.sh           batch keygen/subkeys/exports/verification (no expect)
 lib/gpg_card.sh           ykman reset/touch + a --status-fd/--command-fd
                           responder for keytocard / PIN change / card attrs
+flake.nix                 package / app / dev shell / checks (Linux + macOS)
+tests/                    non-hardware suite + destructive hardware verifier
 ```
 
 The card dialogues that have no batch equivalent are driven by reading
@@ -165,6 +220,8 @@ responder against a scripted fake `gpg` that proves it answers correctly and
 fails closed:
 
 ```bash
+nix flake check            # shellcheck + the full non-hardware suite, sandboxed
+# or, without the flake:
 nix-shell -p gnupg shellcheck --command 'tests/run.sh'
 ```
 
@@ -172,9 +229,27 @@ End-to-end hardware verification (destructive — factory-resets the connected
 card, then independently re-checks the result with `ykman` + `gpg`):
 
 ```bash
-nix-shell -p gnupg yubikey-manager --command 'tests/verify_hardware.sh'
-# VERIFY_ALGO=ed25519 tests/verify_hardware.sh   # fast run
+nix develop -c tests/verify_hardware.sh          # needs a connected YubiKey + pcscd
+# or:  nix-shell -p gnupg yubikey-manager --command 'tests/verify_hardware.sh'
+# VERIFY_ALGO=ed25519 tests/verify_hardware.sh    # fast run
 ```
+
+## Relationship to drduh's YubiKey-Guide
+
+This tool automates the workflow from
+[drduh/YubiKey-Guide](https://github.com/drduh/YubiKey-Guide) and follows its
+recommendations: an RSA-4096 (or ed25519) **certify-only master key that never
+expires**, three sign/encrypt/auth subkeys with a **2-year expiry**, a
+**temporary GnuPG home** for generation, the hardened `gpg.conf` (including
+`require-secmem`, SHA-512 digests, AES-256), the destructive **keytocard**
+move, the **6/8-character** user/admin PIN minimums, a **touch policy**, and
+the Linux **`disable-ccid`** scdaemon setting. It goes a little further by
+always exporting a **revocation certificate**, verifying the three subkeys and
+the new user PIN **on the card** before declaring success, and making the
+keyserver upload **opt-in**. For an airgapped, maximum-assurance ceremony —
+and for the macOS gpg-agent/SSH setup to *use* the key afterwards — follow the
+guide directly; this tool targets fast, repeatable, non-interactive
+provisioning (e.g. an IT admin issuing employee keys).
 
 ## What changed in v2
 
