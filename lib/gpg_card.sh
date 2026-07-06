@@ -70,16 +70,29 @@ set_touch_policy() {
 # --------------------------------------------------------- gpg responder
 
 # gpg_card_drive <description> -- <gpg args...>
+#
+# GnuPG under --pinentry-mode loopback emits every secret prompt as
+# `GET_HIDDEN passphrase.enter` with NO NEED_PASSPHRASE hint and no distinct
+# prompt key for PIN vs key-passphrase (verified against GnuPG 2.x + YubiKey
+# 5.2.7). So GET_HIDDEN is dispatched by DRIVE_HIDDEN_MODE:
+#   pin       every GET_HIDDEN is a card PIN, answered from DRIVE_PINS in order
+#             (change-pin: current,new,new; card attrs: admin PIN each time)
+#   keytocard the first GET_HIDDEN after each slot selection is the source
+#             key's passphrase (each subkey has its own keygrip, so it is
+#             always prompted, first); the admin PIN(s) follow from DRIVE_PINS
+#
 # Answer sources (globals set via reset_drive_state + assignment per call):
 #   DRIVE_CMDS[]      FIFO for menu prompts (edit/card menus, change-pin menu)
 #   DRIVE_SLOTS[]     FIFO for keytocard slot selection
-#   DRIVE_PINS[]      FIFO for GET_HIDDEN when a card PIN was requested
-#   DRIVE_PASSPHRASE  answer for GET_HIDDEN when a key passphrase was requested
+#   DRIVE_PINS[]      FIFO for GET_HIDDEN card PINs
+#   DRIVE_PASSPHRASE  key passphrase (keytocard mode, first hidden per slot)
 #   DRIVE_MAP[key]    fixed answer for a specific GET_LINE/GET_BOOL prompt key
+#   DRIVE_HIDDEN_MODE pin | keytocard
 gpg_card_drive() {
   local desc=$1; shift
   [[ ${1-} == -- ]] && shift
-  local cmd_i=0 slot_i=0 pin_i=0 last_need="" line key rc
+  local cmd_i=0 slot_i=0 pin_i=0 want_keypass=0 line key rc
+  local mode=${DRIVE_HIDDEN_MODE:-pin}
 
   coproc GPGD {
     LC_ALL=C gpg --homedir "${TMP_GNUPGHOME}" --no-tty --expert \
@@ -95,24 +108,22 @@ gpg_card_drive() {
 
   while IFS= read -r -t "${DRIVE_TIMEOUT}" line <&"${out}"; do
     case ${line} in
-      "[GNUPG:] NEED_PASSPHRASE_PIN"*) last_need="pin" ;;
-      "[GNUPG:] NEED_PASSPHRASE"*)     last_need="passphrase" ;;
-
       "[GNUPG:] GET_HIDDEN "*)
         key=${line#"[GNUPG:] GET_HIDDEN "}
-        printf '[drive:%s] GET_HIDDEN %s (as %s)\n' "${desc}" "${key}" "${last_need:-unknown}" >>"${RUN_LOG}"
-        case ${last_need} in
-          passphrase) send "${DRIVE_PASSPHRASE}" ;;
-          pin) (( pin_i < ${#DRIVE_PINS[@]} )) \
-                 || { fail_drive "PIN requested (${key}) but PIN queue exhausted — refusing to guess"; return 1; }
-               send "${DRIVE_PINS[pin_i]}"; (( ++pin_i )) ;;
-          *)  fail_drive "GET_HIDDEN ${key} with no preceding NEED_PASSPHRASE* — refusing to guess"; return 1 ;;
-        esac
-        last_need="" ;;
+        if [[ ${mode} == keytocard && ${want_keypass} == 1 ]]; then
+          printf '[drive:%s] GET_HIDDEN %s (key passphrase)\n' "${desc}" "${key}" >>"${RUN_LOG}"
+          send "${DRIVE_PASSPHRASE}"; want_keypass=0
+        else
+          printf '[drive:%s] GET_HIDDEN %s (card PIN #%s)\n' "${desc}" "${key}" "${pin_i}" >>"${RUN_LOG}"
+          (( pin_i < ${#DRIVE_PINS[@]} )) \
+            || { fail_drive "PIN requested (${key}) but PIN queue exhausted — refusing to guess"; return 1; }
+          send "${DRIVE_PINS[pin_i]}"; (( ++pin_i ))
+        fi ;;
 
       "[GNUPG:] GET_LINE cardedit.genkeys.storekeytype")
         (( slot_i < ${#DRIVE_SLOTS[@]} )) || { fail_drive "slot prompt, empty slot queue"; return 1; }
-        send "${DRIVE_SLOTS[slot_i]}"; (( ++slot_i )) ;;
+        send "${DRIVE_SLOTS[slot_i]}"; (( ++slot_i ))
+        want_keypass=1 ;;   # next GET_HIDDEN unlocks this subkey's secret
 
       "[GNUPG:] GET_LINE "*|"[GNUPG:] GET_BOOL "*)
         key=${line#"[GNUPG:] GET_"}; key=${key#* }
@@ -144,6 +155,7 @@ gpg_card_drive() {
 reset_drive_state() {
   DRIVE_CMDS=() DRIVE_SLOTS=() DRIVE_PINS=()
   DRIVE_PASSPHRASE=""
+  DRIVE_HIDDEN_MODE="pin"
   unset DRIVE_MAP; declare -gA DRIVE_MAP=()
 }
 
@@ -153,14 +165,15 @@ reset_drive_state() {
 # card stubs, so exports must already be written before this runs.
 keytocard_subkeys() {
   reset_drive_state
+  DRIVE_HIDDEN_MODE="keytocard"
   DRIVE_CMDS=("key 1" "keytocard" "key 1"
               "key 2" "keytocard" "key 2"
               "key 3" "keytocard"
               "save")
   DRIVE_SLOTS=(1 2 3)                 # signature=1, encryption=2, authentication=3
   DRIVE_PASSPHRASE=${KEY_PASSPHRASE}
-  # Admin PIN may be re-requested depending on scdaemon caching; provide
-  # enough entries. Extra unused entries are harmless.
+  # One admin-PIN prompt per subkey at most (scdaemon caches PW3 after the
+  # first), but provide a generous queue; extra entries are never consumed.
   local i; DRIVE_PINS=(); for ((i=0; i<6; i++)); do DRIVE_PINS+=("${CARD_ADMIN_CURRENT}"); done
   DRIVE_MAP=( ["cardedit.genkeys.replace_key"]="y" ["keyedit.save.okay"]="y" )
   release_card_from_gpg

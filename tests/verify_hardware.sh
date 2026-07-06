@@ -24,10 +24,26 @@ T_ADMIN_PIN="8642097531"
 T_PASS="verify-pass-$$"
 T_EMAIL="verify@example.com"
 T_ALGO="${VERIFY_ALGO:-rsa4096}"     # override with VERIFY_ALGO=ed25519 for a fast run
-T_TOUCH="cached"
+# Default touch=off so the card self-test signatures run unattended (a touch
+# policy would block on a physical tap). Set VERIFY_TOUCH=on|cached to also
+# exercise touch-policy setting — but then a human must tap the key when it
+# blinks during the signature checks.
+T_TOUCH="${VERIFY_TOUCH:-off}"
 OUT=$(mktemp -d)
 GNUPGHOME_CHECK=$(mktemp -d); chmod 700 "${GNUPGHOME_CHECK}"
 trap 'rm -rf "${OUT}" "${GNUPGHOME_CHECK}"; gpgconf --homedir "${GNUPGHOME_CHECK}" --kill all 2>/dev/null || true' EXIT
+
+# The independent re-check homedirs are isolated too, so give them the same
+# scdaemon config the provisioning run uses (needed where the card requires
+# PC/SC forcing). Same precedence as lib/gpg_keys.sh.
+seed_scdaemon_conf() { # $1 = homedir
+  if [[ -n ${YKPROV_SCDAEMON_CONF:-} && -f ${YKPROV_SCDAEMON_CONF} ]]; then
+    cp "${YKPROV_SCDAEMON_CONF}" "$1/scdaemon.conf"
+  elif [[ -f ${HOME}/.gnupg/scdaemon.conf ]]; then
+    cp "${HOME}/.gnupg/scdaemon.conf" "$1/scdaemon.conf"
+  fi
+}
+seed_scdaemon_conf "${GNUPGHOME_CHECK}"
 
 command -v ykman >/dev/null || { echo "ykman required (nix-shell -p yubikey-manager)"; exit 1; }
 command -v gpg   >/dev/null || { echo "gpg required (nix-shell -p gnupg)"; exit 1; }
@@ -70,8 +86,10 @@ CARD_STATUS=$(LC_ALL=C gpg --homedir "${GNUPGHOME_CHECK}" --card-status --with-c
 YK_INFO=$(ykman --device "${SERIAL}" openpgp info 2>/dev/null)
 
 t "card reports 3 key fingerprints (sign/enc/auth present)"
-NFPR=$(awk -F: '$1=="fpr" && $2$3$4 != ""' <<<"${CARD_STATUS}" | grep -c . || true)
-assert_eq "${NFPR}" "3"
+# card-status --with-colons puts all three fingerprints as fields 2/3/4 of a
+# single fpr: line; count the non-empty ones.
+NFPR=$(awk -F: '$1=="fpr"{n=0; for(i=2;i<=4;i++) if($i!="") n++; print n; exit}' <<<"${CARD_STATUS}")
+assert_eq "${NFPR:-0}" "3"
 
 t "artifacts: public key written"
 assert_file "${OUT}/public-key.asc"
@@ -87,6 +105,7 @@ assert_contains "${NAME}" "Tester"
 # present, the card would still want 123456 and this signature would fail.
 t "CRITICAL: card signature succeeds with the NEW user PIN"
 SIG_HOME=$(mktemp -d); chmod 700 "${SIG_HOME}"
+seed_scdaemon_conf "${SIG_HOME}"
 gpgconf --kill scdaemon gpg-agent 2>/dev/null || true
 # import public key so gpg knows the card's keys
 gpg --homedir "${SIG_HOME}" --import "${OUT}/public-key.asc" >/dev/null 2>&1
@@ -100,13 +119,17 @@ else
 fi
 rm -rf "${SIG_HOME}"
 
-# Touch policy: ykman openpgp info reports per-slot UIF (touch) status.
-t "touch policy applied to signature slot (not Off)"
-if grep -qiE 'Signature key.*touch|touch.*(cached|on|fixed)' <<<"${YK_INFO}" \
-   || ykman --device "${SERIAL}" openpgp info 2>/dev/null | grep -qi 'cached'; then
-  pass
+# Touch policy: only asserted when a policy was actually requested (the
+# hands-free default is off, which the script leaves as the factory UIF state).
+if [[ ${T_TOUCH} != off ]]; then
+  t "touch policy '${T_TOUCH}' applied (ykman reports non-Off UIF)"
+  if grep -qiE "(cached|on|fixed)" < <(ykman --device "${SERIAL}" openpgp info 2>/dev/null | grep -iA3 -i 'touch'); then
+    pass
+  else
+    fail "touch policy does not look applied; ykman info:\n${YK_INFO}"
+  fi
 else
-  fail "touch policy does not look applied; ykman info:\n${YK_INFO}"
+  echo "  --   touch policy: skipped (hands-free off run; set VERIFY_TOUCH=on with a human present)"
 fi
 
 # Admin PIN change: verify retry counters are healthy (3/_/3) and that the

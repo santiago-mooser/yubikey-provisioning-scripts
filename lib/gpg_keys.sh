@@ -25,6 +25,16 @@ setup_tmp_gnupghome() {
   PASSPHRASE_FILE="${base}/passphrase"
   (umask 077 && printf '%s' "${KEY_PASSPHRASE}" > "${PASSPHRASE_FILE}")
 
+  # An isolated GNUPGHOME does not see the host's smartcard configuration.
+  # If the card needs specific scdaemon settings (e.g. forcing PC/SC on some
+  # systems), inherit them: an explicit YKPROV_SCDAEMON_CONF wins, otherwise
+  # copy the user's ~/.gnupg/scdaemon.conf if present.
+  if [[ -n ${YKPROV_SCDAEMON_CONF:-} && -f ${YKPROV_SCDAEMON_CONF} ]]; then
+    cp "${YKPROV_SCDAEMON_CONF}" "${base}/scdaemon.conf"
+  elif [[ -f ${HOME}/.gnupg/scdaemon.conf ]]; then
+    cp "${HOME}/.gnupg/scdaemon.conf" "${base}/scdaemon.conf"
+  fi
+
   cat > "${base}/gpg.conf" <<'EOF'
 personal-cipher-preferences AES256 AES192 AES
 personal-digest-preferences SHA512 SHA384 SHA256
